@@ -1,0 +1,154 @@
+# Configure hosts according Vertica documented best practices
+---
+- name: Configure hosts according Vertica documented best practices
+  hosts: "{{ hosts_prompt }}"
+  vars_prompt:
+     ### Host where playbook about to play
+   - name: "hosts_prompt"
+     prompt: "Enter the Host or Host group need to run with this Playbook"
+     private: no
+  vars:
+    rft_pkg: "rapidfile-1.0.0-beta.4-Linux.rpm"
+  gather_facts: yes
+  tasks:
+    - name: Make sure we always use /bin/bash
+      shell:
+        cmd: |
+          [[ -x /bin/sh.ORIG ]] || ( mv /bin/sh /bin/sh.ORIG && ln -s /bin/bash /bin/sh )
+          ls -hal /bin/sh /bin/sh.ORIG
+      register: out
+    - debug: 
+        msg: "{{ out.stdout_lines }}"
+    - pause:
+        prompt: "Original /bin/sh should be saved and new link it /bin/bash in place. Hit Ctrl-C and C to continue or A to abort."
+
+    - name: Set Block IO scheduler noop (for SSD); assumes /dev/sda device
+      shell:
+        cmd: |
+          echo noop > /sys/block/sda/queue/scheduler
+          '[[ grep -q "scheduler" /etc/rc.local ]] || ( echo "echo noop > /sys/block/sda/queue/scheduler" >> /etc/rc.local )'
+          cat /sys/block/sda/queue/scheduler
+          grep scheduler /etc/rc.local
+      register: out
+    - debug: 
+        msg: "{{ out.stdout_lines }}"
+    - pause:
+        prompt: "IO schedulers should be noop (assuming SSD). Hit Ctrl-C and C to continue or A to abort."
+
+    - name: Set the block device read-ahead settings to 8192
+      shell: 
+        cmd: | 
+          /sbin/blockdev --setra 8192 /dev/sda
+          /sbin/blockdev --setra 8192 /dev/dm-*
+          '[[ grep -q "setra 8192 /dev/sda" /etc/rc.local ]] || ( echo "/sbin/blockdev --setra 8192 /dev/sda" >> /etc/rc.local )'
+          '[[ grep -q "setra 8192 /dev/dm-" /etc/rc.local ]] || ( echo "/sbin/blockdev --setra 8192 /dev/dm-*" >> /etc/rc.local )'
+          /sbin/blockdev --getra /dev/sda
+          /sbin/blockdev --getra /dev/dm-*
+          grep setra /etc/rc.local
+      register: out
+      ignore_errors: yes
+    - debug: 
+        msg: "{{ out.stdout_lines }}"
+    - pause:
+        prompt: "Read-ahead for /dev/sda and /dev/dm-* should be set to 8192. Hit Ctrl-C and C to continue or A to abort."
+
+    - name: Set Timezone and Language
+      shell:
+        cmd: |
+          '[[ grep -q "America/Los_Angeles" /etc/profile ]] || ( echo export TZ="America/Los_Angeles" | tee -a /etc/profile )'
+          '[[ grep -q "en_US.UTF-8" /etc/profile ]] || ( echo export LANG="en_US.UTF-8" | tee -a /etc/profile )'
+          grep -iE "LANG|TZ" /etc/profile
+      register: out
+      ignore_errors: no 
+    - debug:
+        msg: "{{ out.stdout_lines }}"
+    - pause:
+        prompt: "TZ should be America/Los_Angeles and LANG should be en_US.UTF-8. Hit Ctrl-C and C to continue or A to abort."
+
+    - name: Disable firewall
+      block:
+        - name: Stop, mask, and disable firewalld
+          systemd:
+            name: firewalld
+            state: stopped
+            enabled: no
+            masked: yes
+        - name: Gather service facts
+          service_facts:
+        - name: Check firewalld status
+          debug:
+            msg: "{{ ansible_facts.services['firewalld.service'] }}"
+    - pause:
+        prompt: "Firewall service status should be masked. Hit Ctrl-C and C to continue or A to abort."
+
+    - name: Install recommended support packages
+      package:
+        name: 
+          - gdb
+          - mcelog
+          - sysstat
+        state: latest
+      register: out
+      ignore_errors: no 
+    - debug:
+        msg: "{{ out.results }}"
+    - pause:
+        prompt: "Should have latest gdb, mcelog, and sysstat packages installed. Hit Ctrl-C and C to continue or A to abort."
+
+    - name: Configure virtual memory swap behavior
+      shell:
+        cmd: |
+          echo 1 > /proc/sys/vm/swappiness
+          echo 'vm.swappiness = 1' | tee -a /etc/sysctl.conf
+          cat /proc/sys/vm/swappiness
+          tail -1 /etc/sysctl.conf
+      register: out
+      ignore_errors: no 
+    - debug:
+        msg: "{{ out.stdout_lines }}"
+    - pause:
+        prompt: "Swappiness should be set to 1. Hit Ctrl-C and C to continue or A to abort."
+
+    - name: Install RapidFile Toolkit
+      block:
+        - name: Copy RFT package to hosts
+          copy: 
+            src: "files/{{ rft_pkg }}"
+            dest: "/tmp/"
+            mode: "0644"
+          register: out
+          ignore_errors: no 
+        - debug: var=out
+        - name: Install the package on the host
+          package:
+            name: "/tmp/{{ rft_pkg }}"
+            state: latest
+          register: out
+          ignore_errors: no 
+        - debug:
+            msg: "{{ out.results }}"
+        - name: Gather package facts
+          package_facts:
+        - name: Verify that the package is installed
+          debug:
+            msg: "{{ ansible_facts.packages['rapidfile'] | length }} version(s) of RapidFile Toolkit installed"
+          when: "'rapidfile' in ansible_facts.packages"
+    - pause:
+        prompt: "Check that RapidFile Toolkit is installed. Hit Ctrl-C and C to continue or A to abort."
+
+    - name: Disable SE Linux
+      shell:
+        cmd: |
+          setenforce 0
+          getenforce
+          sed -i "s/SELINUX=enforcing/SELINUX=disabled/g" /etc/selinux/config
+          grep SELINUX= /etc/selinux/config | grep -v '^\#'
+      register: out
+      ignore_errors: no 
+    - debug:
+        msg: "{{ out.stdout_lines }}"
+    - pause:
+        prompt: "Result should be Disabled. Hit Ctrl-C and C to continue or A to abort."
+
+...
+

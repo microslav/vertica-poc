@@ -1,0 +1,48 @@
+# Install tuned and latency sensititive tunings for vcpuperf
+---
+- name: Install tuned and latency sensititive tunings for vcpuperf
+  hosts: "{{ hosts_prompt }}"
+  vars_prompt:
+     ### Host where playbook about to play
+   - name: "hosts_prompt"
+     prompt: "Enter the Host or Host group need to run with this Playbook"
+     private: no
+  vars:
+    tuned_file: "files/tuned.conf"
+    tuned_config_dir: "/etc/tuned/vertica-performance"
+  gather_facts: yes
+  tasks:
+    - name: Install tuned on the hosts
+      package:
+        name: tuned
+        state: latest
+    - name: Create tuned configuration directory
+      file:
+        path: "{{ tuned_config_dir }}"
+        state: directory
+        mode: "755"
+    - name: Copy tuned configuration for Vertica to the hosts
+      copy:
+        src: "{{ tuned_file }}"
+        dest: "{{ tuned_config_dir }}"
+        mode: "644"
+    - name: Enable and start tuned service
+      systemd:
+        name: tuned
+        state: started
+        enabled: yes
+    - name: Gather service facts
+      service_facts:
+    - name: Check tuned status
+      debug:
+        msg: "{{ ansible_facts.services['tuned.service'] }}"
+    - name: Configure and verify tuned is working
+      shell:
+        cmd: |
+          tuned-adm profile vertica-performance
+          tuned-adm verify
+          grep -i mhz /proc/cpuinfo
+      register: out
+    - debug:
+        msg: "{{ out.stdout_lines }}"
+    ### Revert to defaults by running "tuned-adm recommend" on hosts

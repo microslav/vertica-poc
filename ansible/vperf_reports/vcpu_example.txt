@@ -1,0 +1,16 @@
+Compiled with: 7.3.1 20180303 (Red Hat 7.3.1-5)
+Expected time on Core 2, 2.53GHz: ~9.5s
+Expected time on Nehalem, 2.67GHz: ~9.0s
+Expected time on Xeon 5670, 2.93GHz: ~8.0s
+
+This machine's time: 
+  CPU Time: 8.090000s
+  Real Time:8.100000s
+
+Some machines automatically throttle the CPU to save power.
+  This test can be done in <100 microseconds (60-70 on Xeon 5670, 2.93GHz).
+  Low load times much larger than 100-200us or much larger than the corresponding high load time
+    indicate low-load throttling, which can adversely affect small query / concurrent performance.
+
+This machine's high load time: 82 microseconds.
+This machine's low load time: 109 microseconds.

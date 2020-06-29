@@ -1,0 +1,68 @@
+# Install and configure Docker on the test hosts
+---
+- name: Install and configure Docker on the test hosts
+  hosts: "{{ hosts_prompt }}"
+  vars_prompt:
+     ### Host where playbook about to play
+   - name: "hosts_prompt"
+     prompt: "Enter the Host or Host group need to run with this Playbook"
+     private: no
+  gather_facts: yes
+  tasks:
+    - name: "Install some Docker prerequisites and helpers"
+      package:
+        name: "{{ packages }}"
+        state: latest
+      vars:
+        packages:
+          - yum-utils
+          - device-mapper-persistent-data
+          - lvm2
+
+    - name: "Add Docker Repo Key for Centos"
+      rpm_key:
+        key: https://download.docker.com/linux/centos/gpg 
+        state: present
+
+    - name: "Get Docker Centos Repo"
+      get_url:
+        url: https://download.docker.com/linux/centos/docker-ce.repo
+        dest: /etc/yum.repos.d/docker-ce.repo
+        force: yes 
+        owner: root
+        group: root 
+        mode: 0644
+
+    - name: "Install Docker packages"
+      yum:
+        name: "{{ packages }}"
+        state: latest
+        update_cache: yes
+      vars:
+        packages:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+
+    - name: "Enable IPv4 Forwarding for Container Networking"
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        sysctl_set: yes
+        state: present
+        reload: yes
+
+    - name: "Configure Docker service" 
+      service:
+        name: docker 
+        state: started 
+        enabled: yes
+
+    - name: "Test that Docker works"
+      shell:
+        cmd: docker run hello-world
+      register: helloworld
+    - debug: var=helloworld.stdout_lines
+    - debug: var=helloworld.stderr_lines
+...
+

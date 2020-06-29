@@ -1,0 +1,35 @@
+# Measure host performance with vperf tools
+---
+- name: Measure host performance with vperf tools
+  hosts: "{{ hg }}"
+  vars_prompt:
+     ### Host where playbook about to play
+   - name: "hg"
+     prompt: "Enter the Host or Host group need to run with this Playbook"
+     private: no
+  vars:
+    loc_path: "/tmp/"
+    nfs_path: "/mnt/vertica/"
+    run_as: "dbadmin"
+    key: "~/.ssh/vertica-poc"
+    vperf_dir: "vperf_reports"
+  gather_facts: yes
+  tasks:
+    - name: Create or check local destination directory
+      local_action:
+        module: file
+        path: "{{ vperf_dir }}/"
+        state: directory
+        mode: "0755"
+    - name: Gather CPU performance data
+      shell: 
+        cmd: "vcpuperf | tee /tmp/vcpuperf_{{ hg }}_{{ inventory_hostname_short }}.out 2>&1"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+    - name: Fetch performance results into local directory
+      fetch:
+        src: "/tmp/vcpuperf_{{ hg }}_{{ inventory_hostname_short }}.out"
+        dest: "{{ vperf_dir }}/"
+        flat: yes
+

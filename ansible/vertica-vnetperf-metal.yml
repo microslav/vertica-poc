@@ -1,0 +1,32 @@
+# Measure host performance with vperf tools
+---
+- name: Measure host performance with vperf tools
+  hosts: "{{ hg }}[0]"
+  vars:
+    hg: "metal"
+    priv_ips: "10.4.26.13,10.4.26.15,10.4.26.17,10.4.26.19,10.4.26.21,10.4.26.23"
+    run_as: "dbadmin"
+    key: "~/.ssh/vertica-poc"
+    vbin_path: "/opt/vertica/bin"
+    vperf_dir: "vperf_reports"
+  gather_facts: yes
+  tasks:
+    - name: Create or check local destination directory
+      local_action:
+        module: file
+        path: "{{ vperf_dir }}/"
+        state: directory
+        mode: "0755"
+    - name: Gather private network IO performance
+      shell: 
+        cmd: "vnetperf --duration=5 --hosts={{ priv_ips }} --identity-file={{ key }} --vertica-install={{ vbin_path }} > /tmp/vnetperf_{{ hg }}_{{ inventory_hostname_short }}.out 2>&1"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+    - name: Fetch performance results into local directory
+      fetch:
+        src: "/tmp/vnetperf_{{ hg }}_{{ inventory_hostname_short }}.out"
+        dest: "{{ vperf_dir }}/"
+        flat: yes
+
+        

@@ -1,0 +1,85 @@
+# Install range of packages on the test hosts
+---
+- name: Install packages on test hosts
+  hosts: "{{ hosts_prompt }}"
+  gather_facts: yes
+  vars_prompt:
+     ### Host where playbook about to play
+   - name: "hosts_prompt" 
+     prompt: "Enter the Host or Host group need to run with this Playbook"
+     private: no
+  tasks:
+    - name: "Get EPEL Repository"
+      package:
+        name: epel-release
+        state: latest
+
+    - name: "Install latest deltarpm to speed up updates"
+      package:
+        name: deltarpm
+        state: present
+
+    - name: "Update all packages to latest"
+      package:
+        name: "*"
+        state: latest
+
+    - name: "Install System Packages"
+      package:
+        name: "{{ packages }}"
+        state: latest
+      vars:
+        packages:
+          - open-vm-tools
+          - nfs-utils
+          - bind-utils
+          - tzdata
+          - dialog
+          - gdb
+          - mcelog
+          - wget
+          - git
+          - kernel-devel
+          - kernel-tools
+          - gcc
+          - bc
+          - dracut
+          - make
+          - python-pip
+          - perl
+          - npm
+          - eject
+          - inxi
+
+    - name: "Install Performance Packages"
+      package:
+        name: "{{ packages }}"
+        state: latest
+      vars:
+        packages:
+          - time
+          - sysstat
+          - atop
+          - lsof
+          - tuned
+          - dstat
+          - htop
+          - iftop
+          - iotop
+          - pv
+
+    - name: "Install Comfort Packages"
+      package:
+        name: "{{ packages }}"
+        state: latest
+      vars:
+        packages:
+          - mosh
+          - tmux
+          - emacs-nox
+          - emacs-yaml-mode
+          - parallel
+          - pigz
+          - jq
+          - httpie
+...

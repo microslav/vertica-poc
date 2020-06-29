@@ -1,0 +1,254 @@
+### Make sure we have perl 5 installed
+ansible vertica[10:19] -m shell -a "perl --version | grep 'This is perl 5'"
+
+### Vertica scripts assume bash; make sure we don't accidentally use sh
+ansible vertica[10:19] -m shell -a 'mv /bin/sh /bin/sh.ORIG && ln -s /bin/bash /bin/sh'
+
+### Check socket stats to ensure required ports are not being used (should return blank/error)
+### https://www.vertica.com/docs/9.3.x/HTML/Content/Authoring/InstallationGuide/BeforeYouInstall/EnsurePortsAreAvailable.htm
+ansible vertica[10:19] -m shell -a "ss -atupn | grep -E ':5433|:5434|:5444|:5450|:4803|:4804|:6543'"
+
+### Get the block device read-ahead settings; should be at least 2048
+### https://www.vertica.com/docs/9.3.x/HTML/Content/Authoring/InstallationGuide/BeforeYouInstall/DiskReadahead.htm 
+ansible vertica[10:19] -m shell -a "/sbin/blockdev --getra /dev/mapper/centos-*"
+
+### Check that Huge Pages set to "always" for Centos/RHEL
+### https://www.vertica.com/docs/9.3.x/HTML/Content/Authoring/InstallationGuide/BeforeYouInstall/transparenthugepages.htm
+ansible vertica[10:19] -m shell -a "cat /sys/kernel/mm/transparent_hugepage/enabled"
+
+### Check that block IO schedule set to deadline or noop (for SSD); assumes /dev/sda device
+### https://www.vertica.com/docs/9.3.x/HTML/Content/Authoring/InstallationGuide/BeforeYouInstall/IOScheduling.htm
+ansible vertica[10:19] -m shell -a 'echo noop > /sys/block/sda/queue/scheduler'
+ansible vertica[10:19] -m shell -a 'echo "echo noop > /sys/block/sda/queue/scheduler" >> /etc/rc.local'
+ansible vertica[10:19] -m shell -a "cat /sys/block/sda/queue/scheduler"
+ansible vertica[10:19] -m shell -a "grep scheduler /etc/rc.local"
+
+### Set environment variables for language and timezone
+### https://www.vertica.com/docs/9.3.x/HTML/Content/Authoring/InstallationGuide/BeforeYouInstall/LANGenvironmentVar.htm
+### https://www.vertica.com/docs/9.3.x/HTML/Content/Authoring/InstallationGuide/BeforeYouInstall/TZenvironmentVar.htm 
+ansible vertica[10:19] -m shell -a 'echo export TZ="America/Los_Angeles" | tee -a /etc/profile'
+ansible vertica[10:19] -m shell -a 'echo export LANG="en_US.UTF-8" | tee -a /etc/profile'
+ansible vertica[10:19] -m shell -a 'grep -iE "LANG|TZ" /etc/profile'
+
+### Turn off firewall in case it is active; bad in production, reduces headaches in PoC
+### https://www.vertica.com/docs/9.3.x/HTML/Content/Authoring/InstallationGuide/BeforeYouInstall/iptablesEnabled.htm
+ansible vertica[10:19] -m shell -a "systemctl mask firewalld && systemctl disable firewalld && systemctl stop firewalld"
+
+### Install recommended support tools
+### https://www.vertica.com/docs/9.3.x/HTML/Content/Authoring/InstallationGuide/BeforeYouInstall/supporttools.htm
+ansible vertica[10:19] -m yum -a 'name=gdb,mcelog,sysstat state=latest'
+
+### Install RapidFile Toolkit
+RFT_PATH="files/rapidfile-1.0.0-beta.4-Linux.rpm"
+ansible vertica -m copy -a "src=${RFT_PATH} dest=/tmp/ mode=0644"
+ansible vertica -m yum -a "name=${RFT_PATH} state=latest"
+vertica -m shell -a 'rpm -qa | grep -i rapidfile'
+
+### Configure virtual memory swap behavior
+###
+ansible vertica[10:19] -m shell -a "echo 1 > /proc/sys/vm/swappiness && ( echo 'vm.swappiness = 1' | tee -a /etc/sysctl.conf )"
+ansible vertica[10:19] -m shell -a "cat /proc/sys/vm/swappiness && tail -1 /etc/sysctl.conf"
+
+### Configure High Performance and Latency Optimized kernel options
+ansible vertica[10:19] -m yum -a "name=tuned state=latest"
+ansible vertica[10:19] -o -m file -a "path=/etc/tuned/vertica-performance state=directory mode='755'"
+ansible vertica[10:19] -m copy -a "src=files/tuned.conf dest=/etc/tuned/vertica-performance/ mode='644'"
+ansible vertica[10:19] -m shell -a "systemctl start tuned && systemctl enable tuned"
+ansible vertica[10:19] -m shell -a 'tuned-adm profile vertica-performance'
+ansible vertica[10:19] -m shell -a 'tuned-adm verify'
+ansible vertica[10:19] -m shell -a 'grep -i mhz /proc/cpuinfo'
+
+### Disable SE Linux
+### 
+ansible vertica[10:19] -m shell -a 'setenforce 0 && getenforce'
+ansible vertica[10:19] -m shell -a 'sed -i "s/SELINUX=enforcing/SELINUX=disabled/g" /etc/selinux/config'
+ansible vertica[10:19] -m shell -a 'grep SELINUX= /etc/selinux/config'
+
+### Check that dbadmin has unrestricted sudo access; set up in the user playbook
+### 
+ansible vertica[10:19] -m shell -a 'ls -l /etc/sudoers.d/dbadmin'
+ansible vertica[10:19] -m shell -a 'cat /etc/sudoers.d/dbadmin'
+
+### make sure an accurate auth_params.conf file exists in the "files" directory before running
+ansible vertica[10:19] -m copy -a 'src=files/auth_params.conf dest=/home/dbadmin/ owner=dbadmin group=verticadba mode=0600'
+### When using mounted depot --> ansible vertica[10:19] -m shell -a "chown -R dbadmin:verticadba /mnt/vertica_depot"
+
+### Copy the Vertica RPM to all the hosts and install it
+### 
+ansible vertica[10:19] -m copy -a 'src=files/vertica-9.3.1-3.x86_64.RHEL6.rpm dest=/tmp/ mode=0644'
+ansible vertica[10:19] -m yum -a 'name=/tmp/vertica-9.3.1-3.x86_64.RHEL6.rpm state=latest'
+ansible vertica[10:19] -m shell -a 'rpm -qa | grep -i vertica'
+ansible vertica[10:19] -m blockinfile -a \
+  "dest=/etc/profile.d/custom-path.sh block='PATH=\$PATH:/opt/vertica/bin' marker='# {mark} ANSIBLE MANAGED BLOCK add Vertica' mode=0644"
+### The above should be handled by a playbook block similar to when installing Go
+
+### Verify that can run as dbadmin and that dbadmin can ssh with keys
+### This should have been configured by previously running user-dbadmin.yml playbook
+ansible vertica -b --become-user=dbadmin --become-method=su -m shell -a 'id'
+ansible vertica -b --become-user=dbadmin --become-method=su -m shell -a \
+  'for i in $(seq -f%02g 11 20); do ssh vertica-priv-${i} touch /tmp/$(hostname)\-$(id -nu); done'
+ansible vertica -b --become-user=dbadmin --become-method=su -m shell -a 'ls -lh /tmp/vertica*'
+
+### Copy the s5cmd binary to the right locations
+ansible vertica[10:19] -o -m file -a "path=/home/dbadmin/go/bin owner=dbadmin group=verticadba state=directory mode=0755"
+ansible vertica[10:19] -m copy -a 'src=/root/go/bin/s5cmd dest=/home/dbadmin/go/bin/ owner=dbadmin group=verticadba mode=0755'
+
+### Create and mount the raw data directories
+DATA_VIP="10.7.24.201"
+DATA_FS="vertica_data"
+DATA_MOUNT="/mnt/vertica_data"
+ansible all -o -m file -a "path=${DATA_MOUNT} state=directory mode='0777'"
+ansible all -o -m mount -a "fstype=nfs path=${DATA_MOUNT} src=${DATA_VIP}:/${DATA_FS} state=mounted"
+
+### Create the depot directories on the hosts and mount them
+DEPOT_VIP="10.7.24.202"
+DEPOT_FS="vertica_depot"
+DEPOT_PATH="${DEPOT_FS}/{{ inventory_hostname_short }}/"
+DEPOT_MOUNT="/mnt/vertica_depot"
+ansible vertica[10:19] -o -m file -a "path=/mnt/${DEPOT_MOUNT} owner=dbadmin group=verticadba state=directory mode='755'"
+ansible vertica[10:19] -o -m mount -a "fstype=nfs path=${DEPOT_MOUNT} src=${DEPOT_VIP}:/${DEPOT_FS} state=mounted"
+ansible vertica[10:19] -o -m file -a "path=${DEPOT_MOUNT}/{{ inventory_hostname_short }} owner=dbadmin group=verticadba state=directory mode='755'"
+ansible vertica[10:19] -o -m mount -a "fstype=nfs path=${DEPOT_MOUNT} src=${DEPOT_VIP}:/${DEPOT_FS} state=absent"
+ansible vertica[10:19] -o -m mount -a "fstype=nfs path=${DEPOT_MOUNT} src=${DEPOT_VIP}:/${DEPOT_FS}/{{ inventory_hostname_short }} state=mounted"
+ansible vertica[10:19] -m shell -a "chmod 755 ${DEPOT_MOUNT}"
+
+### Run the validation scripts. These ship with Vertica and used to check the storage, network, and CPU
+### Prepare before the tests
+PRIVNAMES=""
+for i in $(seq -f%02g 20 -1 1); do PRIVNAMES="vertica-priv-${i}$([[ ! -z "$PRIVNAMES" ]] && echo ',')${PRIVNAMES}"; done
+echo "private net hostnames: ${PRIVNAMES}"
+ansible vertica[10:19] -m shell -a 'echo "dbadmin -       nofile  98304" >> /etc/security/limits.conf'
+ansible vertica[10:19] -m shell -a 'tail -1 /etc/security/limits.conf'
+
+### Test the CPU performance
+ansible vertica -b --become-user=dbadmin --become-method=su -m shell -a \
+  "vcpuperf | tee /tmp/vcpuperf_{{ inventory_hostname_short }}.out 2>&1"
+### Test storage IO to /home/dbadmin directory where the database and depot will go
+ansible vertica -b --become-user=dbadmin --become-method=su -m shell -a \
+  "vioperf --duration=120s --log-interval=1s --thread-count=16 ${DEPOT_MOUNT} >/tmp/vioperf_{{ inventory_hostname_short }}.out 2>&1"
+### Test the network IO between all the hosts; start on one host and reference all hosts
+ansible vertica-01 -b --become-user=dbadmin --become-method=su -m shell -a \
+  "vnetperf --duration=5 --hosts=${PRIVNAMES} --identity-file '~/.ssh/vertica-poc-id_rsa' \
+     --vertica-install=/opt/vertica/bin >/tmp/vnetperf_{{ inventory_hostname_short }}.out 2>&1"
+
+### Copy the required configuration and license files, then install Vertica
+ansible vertica-01 -m copy -a "src=files/vertica_install.cfg dest=~/ mode='600'"
+ansible vertica-01 -m copy -a "src=files/purestoragelic.txt dest=/tmp/license.txt mode=0400"
+ansible vertica-01 -m shell -a \
+  "/opt/vertica/sbin/install_vertica --config-file /root/vertica_install.cfg"
+ansible vertica-01 -m file -a "path=/tmp/license.txt state=absent"
+
+### Create a new database in Eon mode, with storage in S3 bucket and mounted depot storage
+PRIV_IPADDRS="10.5.24.11,101.5.24.102,10.5.24.103,10.5.24.104,10.5.24.105,10.5.24.106,10.5.24.107,10.5.24.108,10.5.24.109,10.5.24.110"
+VERTICA_BUCKET="s3://btk2"
+DEPOT_SIZE="128G"
+SHARDS="20"
+AUTH_CONF="~/auth_params.conf"
+ansible vertica-01 -b --become-user=dbadmin --become-method=su -m shell -a \
+   "admintools -t create_db -x ${AUTH_CONF} --communal-storage-location=${VERTICA_BUCKET} \
+   --depot-path=${DEPOT_MOUNT} --depot-size=${DEPOT_SIZE} \ 
+   --database=verticadb --shard-count=${SHARDS} \
+   --hosts=${PRIVNAMES}"
+
+### Copy the various SQL config files over to the management node
+ansible vertica-11 -m copy -a 'src=files/vertica_fb_tunings.sql dest=/home/dbadmin/ owner=dbadmin group=verticadba mode=0644'
+ansible vertica-11 -m copy -a 'src=files/vertica_depot_reads_ON.sql dest=/home/dbadmin/ owner=dbadmin group=verticadba mode=0644'
+ansible vertica-11 -m copy -a 'src=files/vertica_depot_writes_ON.sql dest=/home/dbadmin/ owner=dbadmin group=verticadba mode=0644'
+ansible vertica-11 -m copy -a 'src=files/vertica_depot_reads_OFF.sql dest=/home/dbadmin/ owner=dbadmin group=verticadba mode=0644'
+ansible vertica-11 -m copy -a 'src=files/vertica_depot_writes_OFF.sql dest=/home/dbadmin/ owner=dbadmin group=verticadba mode=0644'
+
+### Copy the Management Console RPM and install the console
+ansible vertica-11 -m copy -a 'src=files/vertica-console-9.3.1-0.x86_64.RHEL6.rpm dest=/tmp/ mode=0644'
+ansible vertica-11 -m yum -a 'name=/tmp/vertica-console-9.3.1-0.x86_64.RHEL6.rpm state=present'
+ansible vertica-11 -m shell -a "systemctl start vertica-consoled && systemctl enable vertica-consoled"
+
+### Use something like this to UPGRADE vertica
+ansible vertica[10:19]-01 -b --become-user=dbadmin --become-method=su -m shell -a \
+   "admintools -t stop_db --database=verticadb --force"
+ansible vertica[10:19] -m shell -a 'systemctl stop vertica_agent'
+ansible vertica[10:19] -m copy -a 'src=files/vertica-9.3.1-3.x86_64.RHEL6.rpm dest=/tmp/ mode=0644'
+ansible vertica[10:19] -m yum -a 'name=/tmp/vertica-9.3.1-3.x86_64.RHEL6.rpm state=latest'
+ansible vertica[10:19] -m shell -a 'rpm -qa | grep -i vertica'
+### Modify files/vertica_install.cfg to point to latest RPM
+ansible vertica[10:19]-01 -m copy -a "src=files/vertica_install.cfg dest=~/ mode='600'"
+ansible vertica[10:19]-01 -m copy -a "src=files/purestoragelic.txt dest=/tmp/license.txt mode=0400"
+ansible vertica[10:19]-01 -m shell -a \
+  "/opt/vertica/sbin/update_vertica --config-file ~/vertica_install.cfg"
+ansible vertica[10:19]-01 -m file -a "path=/tmp/license.txt state=absent"
+
+
+### Kick off load scripts, one per host
+ansible vertica[10:19] -b --become-user=dbadmin --become-method=su -m shell -a \
+    "cd /mnt/vertica_data/3by_month ; \
+     nohup vsql -e -f ../util_sql/load_cdr_by_month-{{ inventory_hostname_short }}.sql \
+     >> ./load_cdr_by_month-{{ inventory_hostname_short }}.log 2>&1 &" 
+ansible vertica[10:19] -b --become-user=dbadmin --become-method=su -m shell -a \
+    "cd /mnt/vertica_data/3by_month ; \
+     nohup vsql -e -f ../util_sql/load_net_by_month-{{ inventory_hostname_short }}.sql \
+     >> ./load_net_by_month-{{ inventory_hostname_short }}.log 2>&1 &" 
+
+### To add new nodes to an existing Cluster in Standby:
+ansible vertica[0:9] -m copy -a 'src=files/vertica-9.3.1-3.x86_64.RHEL6.rpm dest=/tmp/ mode=0644'
+ansible vertica[0:9] -m yum -a 'name=/tmp/vertica-9.3.1-3.x86_64.RHEL6.rpm state=latest'
+ansible vertica[0:9] -m shell -a 'rpm -qa | grep -i vertica'
+ansible vertica-11 -m shell -a '/opt/vertica/sbin/install_vertica --add-hosts vertica-priv-11,vertica-priv-12,vertica-priv-13,vertica-priv-14,vertica-priv-15,vertica-priv-16,vertica-priv-17,vertica-priv-18,vertica-priv-19,vertica-priv-20 --rpm /tmp/vertica-9.3.1-3.x86_64.RHEL6.rpm --failure-threshold FAIL'
+
+### To add 2 VM nodes to the verticadb database in the default_subcluster:
+PRIV_IPADDRS="10.5.24.101,10.5.24.102"
+DB_NAME="verticadb"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+   "admintools -t db_add_node --noprompts --database=${DB_NAME} --add=${PRIV_IPADDRS}"
+
+### Remove virtual nodes from cluster
+PRIV_IPADDRS="10.5.24.101,10.5.24.102"
+DB_NAME="verticadb"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "admintools -t view_cluster --xpand --database=${DB_NAME}"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+   "admintools -t db_remove_node --noprompts --database=${DB_NAME} --hosts=${PRIV_IPADDRS}"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "vsql -e -c 'select rebalance_shards();'"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "admintools -t view_cluster --xpand --database=${DB_NAME}"
+
+### Add virtual nodes to a vmware_subcluster
+PRIV_IPADDRS="10.5.24.101,10.5.24.102,10.5.24.103,10.5.24.104,10.5.24.105,10.5.24.106,10.5.24.107,10.5.24.108,10.5.24.109,10.5.24.110"
+DB_NAME="verticadb"
+SC_NAME="vmware_subcluster"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "admintools -t view_cluster --xpand --database=${DB_NAME}"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+   "admintools -t db_add_subcluster --subcluster=${SC_NAME} --is-secondary --noprompts --database=${DB_NAME} --hosts=${PRIV_IPADDRS}"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "vsql -e -c 'select rebalance_shards();'"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "admintools -t view_cluster --xpand --database=${DB_NAME}"
+
+### Remove virtual nodes from vmware_cluster and remove the subcluster
+PRIV_IPADDRS="10.5.24.101,10.5.24.102,10.5.24.103,10.5.24.104,10.5.24.105,10.5.24.106,10.5.24.107,10.5.24.108,10.5.24.109,10.5.24.110"
+DB_NAME="verticadb"
+SC_NAME="vmware_subcluster"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "admintools -t view_cluster --xpand --database=${DB_NAME}"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+   "admintools -t db_remove_node --noprompts --database=${DB_NAME} --hosts=${PRIV_IPADDRS}"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "adminTools -t db_remove_subcluster --noprompts --database=${DB_NAME} --subcluster=${SC_NAME}" 
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "vsql -e -c 'select rebalance_shards();'"
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "admintools -t view_cluster --xpand --database=${DB_NAME}"
+
+
+### Kick off LOADTEST scripts, one per host
+ansible vertica-11 -b --become-user=dbadmin --become-method=su -m shell -a \
+    "vsql -e -f /mnt/vertica_data/util_sql/create_loadtest_tables.sql"
+ansible vertica[10:19] -b --become-user=dbadmin --become-method=su -m shell -a \
+    "cd /mnt/vertica_data/3by_month ; \
+     nohup vsql -e -f ../util_sql/loadtest_cdr-{{ inventory_hostname_short }}.sql \
+     >> ./loadtest_cdr-{{ inventory_hostname_short }}.log 2>&1 &" 
+ansible vertica[10:19] -b --become-user=dbadmin --become-method=su -m shell -a \
+    "cd /mnt/vertica_data/3by_month ; \
+     nohup vsql -e -f ../util_sql/loadtest_net-{{ inventory_hostname_short }}.sql \
+     >> ./loadtest_net-{{ inventory_hostname_short }}.log 2>&1 &" 
+

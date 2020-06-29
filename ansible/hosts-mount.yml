@@ -1,0 +1,40 @@
+# Connect the FlashBlade to the host
+---
+- name: Connect the FlashBlade to the host
+  hosts: "{{ hosts_prompt }}"
+  vars_prompt:
+     ### Host where playbook about to play
+   - name: "hosts_prompt"
+     prompt: "Enter the Host or Host group need to run with this Playbook"
+     private: no
+  vars:
+    fb_data: "poc-fb-data-01"
+    fb_fs_name: "vertica"
+    fs_path: "/mnt/{{ fb_fs_name }}"
+    fs_user: "dbadmin"
+    fs_group: "verticadba"
+  gather_facts: yes
+  tasks:
+    - name: "Create the mount point directory"
+      file:
+        path: "{{ fs_path }}"
+        state: directory
+        owner: "{{ fs_user }}"
+        group: "{{ fs_group }}"
+        mode: '0777'
+        
+    - name: "Mount {{ fb_date }}:/{{ fb_fs_name }} filesystem at {{ fs_path }} for user {{ fs_user }}"
+      mount:
+        fstype: nfs
+        path: "{{ fs_path }}"
+        src: "{{ fb_data }}:/{{ fb_fs_name }}"
+        state: mounted
+
+    - name: "Check that the filesystem was mounted"
+      shell:
+        cmd: "df -h | grep {{ fs_path }}"
+      register: results
+    - debug:
+        msg: "{{ results.stdout_lines }}"
+...
+

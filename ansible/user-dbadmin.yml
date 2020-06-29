@@ -1,0 +1,96 @@
+# Configure users on the test hosts
+---
+- name: Configure users on the test hosts
+  hosts: "{{ hosts_prompt }}"
+  gather_facts: yes
+  vars_prompt:
+     ### Host where playbook about to play
+   - name: "hosts_prompt" 
+     prompt: "Enter the Host or Host group need to run with this Playbook"
+     private: no
+  vars:
+    username: "dbadmin"
+    usergroup: "verticadba"
+    realname: "Vertica DBA"
+    pwhash: ""
+    keypath: "~/.ssh/vertica-poc"
+    aws_src: "files/aws_credentials"
+    auth_src: "files/auth_params.conf"
+  tasks:
+    - name: "Create {{ usergroup }} for the new user if it doesn't exist"
+      group:
+        name: "{{ usergroup }}"
+        state: present
+
+    - name: "Create {{ username }} user for {{ realname }}"
+      user:
+        name: "{{ username }}"
+        comment: "{{ realname }}"
+        password: "{{ pwhash }}"
+        generate_ssh_key: yes
+        group: "{{ usergroup }}"
+        groups: docker
+
+    - name: "Add {{ username }} to nopasswd sudoers"
+      shell:
+        cmd: echo "{{ username }} ALL = (root) NOPASSWD:ALL" | sudo tee "/etc/sudoers.d/{{ username }}"
+
+    - name: "Change permissions on sudoers file so SSH is happy"
+      file:
+        path: "/etc/sudoers.d/{{ username }}"
+        mode: '0440'
+
+    - name: "Create the .aws directory"
+      file:
+        path: "/home/{{ username }}/.aws"
+        state: directory
+        owner: "{{ username }}"
+        group: "{{ usergroup }}"
+        
+    - name: "Copy FlashBlade S3 credentials to ~/.aws directory"
+      copy:
+        src: "{{ aws_src }}"
+        dest: "/home/{{ username }}/.aws/credentials"
+        mode: '0600'
+        owner: "{{ username }}"
+        group: "{{ usergroup }}"
+
+    - name: "Copy FlashBlade S3 credentials to ~/auth_params.conf"
+      copy:
+        src: "{{ auth_src }}"
+        dest: "/home/{{ username }}/"
+        mode: '0600'
+        owner: "{{ username }}"
+        group: "{{ usergroup }}"
+
+    - name: "Copy PoC SSH keys to ~/.ssh directory"
+      copy:
+        src: "{{ item }}"
+        dest: "/home/{{ username }}/.ssh/"
+        mode: '0600'
+        owner: "{{ username }}"
+        group: "{{ usergroup }}"
+      with_fileglob: "{{ keypath }}*"
+
+    - name: "Generate authorized_keys from .pub"
+      copy:
+        src: "{{ keypath }}.pub"
+        dest: "/home/{{ username }}/.ssh/authorized_keys"
+        mode: '0600'
+        owner: "{{ username }}"
+        group: "{{ usergroup }}"
+
+    - name: "Generate .ssh/config file"
+      copy:
+        content: |
+          Host *
+            User {{ username }}
+            IdentityFile {{ keypath }}
+            StrictHostKeyChecking no
+        dest: "/home/{{ username }}/.ssh/config"
+        mode: '0600'
+        owner: "{{ username }}"
+        group: "{{ usergroup }}"
+
+...
+
