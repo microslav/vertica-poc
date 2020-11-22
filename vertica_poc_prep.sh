@@ -3,7 +3,7 @@ if [[ "$(basename -- "$0")" == "vertica_poc_prep.sh" ]]; then
     exit 1
 fi
 
-set -x 
+set -x
 
 ######################################################################
 ###
@@ -48,7 +48,7 @@ export VDB_DEPOT_SIZE="32G"
 ### Internal gateway IP address suffix on private network. It's assigned to
 ### the Command host as a NAT gateway to the outside for other PoC hosts.
 ### If there is no separate private network, use the gateway suffix for the
-### public network. 
+### public network.
 ### (!!! Assumes a /24 network; might need to fix for others !!!).
 export LAB_IP_SUFFIX="1"
 
@@ -69,32 +69,32 @@ read -r -d '' STORAGE_ENTRIES <<-_EOF_
 _EOF_
 
 ### Configure how and what to run in the playbook
-export VA_RUN_VPERF="true"
-export VA_RUN_VMART="true"
-export VA_PAUSE_CHECK="true
-"
+export VA_RUN_VPERF="yes"
+export VA_RUN_VMART="yes"
+export VA_PAUSE_CHECK="no"
+
 ######################################################################
 ### CODE BELOW SHOULD NOT NEED TO BE MODIFIED
 ######################################################################
 
 ### Helper Functions
 # Return the first IP address associated with an interface
-function dev_ip() 
-{ 
+function dev_ip()
+{
     local myIP=$(nmcli dev show $1 | grep -F 'IP4.ADDRESS[1]:' | awk '{print $NF}' | cut -d/ -f1)
     echo "$myIP"
 }
 
 # Return the CIDR associated with an interface
-function dev_cidr() 
-{ 
+function dev_cidr()
+{
     local myCIDR=$(nmcli dev show $1 | grep -F 'IP4.ADDRESS[1]:' | awk '{print $NF}')
     echo "$myCIDR"
 }
 
 # Return the connection name associated with an interface
-function dev_conn() 
-{ 
+function dev_conn()
+{
     local myCONN=$(nmcli dev show $1 | grep -F 'GENERAL.CONNECTION:' | awk '{print $NF}')
     echo "$myCONN"
 }
@@ -131,7 +131,7 @@ export LAB_DNS_IP="${PRIV_IP}"
 export LAB_GW="${LAB_PRIV_NET}.${LAB_IP_SUFFIX}"
 
 # Name of Vertica non-root user (Should not be changed, but parameterized for testing)
-export DBUSER="dbadmin"                         
+export DBUSER="dbadmin"
 
 ### Install some basic packages
 yum install -y epel-release
@@ -174,7 +174,7 @@ Host vertica-* ${POC_PREFIX}-* ${LAB_PRIV_NET}.* command
 _EOF_
 
 ######################################################################
-### If using a separate private interface, set up NAT on the Command 
+### If using a separate private interface, set up NAT on the Command
 ### host and configure the private interface as a gateway.
 ######################################################################
 
@@ -198,8 +198,8 @@ if [ "${PRIV_CONN}" != "${PUBL_NDEV}" ]; then
 fi
 
 # Add allowed services and ports for the public zone
-firewall-cmd --permanent --change-interface=${PUBL_NDEV} --zone=public 
-firewall-cmd --permanent --change-interface=${DATA_NDEV} --zone=public 
+firewall-cmd --permanent --change-interface=${PUBL_NDEV} --zone=public
+firewall-cmd --permanent --change-interface=${DATA_NDEV} --zone=public
 firewall-cmd --permanent --zone=public --add-service=http
 firewall-cmd --permanent --zone=public --add-service=https
 firewall-cmd --permanent --zone=public --add-service=dns
@@ -261,8 +261,8 @@ $SECONDARY_HOST_ENTRIES
 $STORAGE_ENTRIES
 
 # Localhost
-127.0.0.1    localhost localhost4 
-::1          localhost localhost6 
+127.0.0.1    localhost localhost4
+::1          localhost localhost6
 _EOF_
 
 ### Test config file syntax, allow in firewall and start the service
@@ -286,7 +286,7 @@ _EOF_
 
 ### Restart and check
 systemctl daemon-reload
-systemctl restart dnsmasq 
+systemctl restart dnsmasq
 systemctl status dnsmasq
 
 ### Use this (Command) server to resolve names
@@ -296,7 +296,7 @@ if [ "${PRIV_CONN}" != "${PUBL_NDEV}" ]; then
     nmcli connection modify ${PRIV_CONN} ipv4.dns-search ${LAB_DOM}
     nohup bash -c "nmcli connection down ${PRIV_CONN} && nmcli connection up ${PRIV_CONN}"
     sleep 1
-fi 
+fi
 nmcli connection modify ${PUBL_CONN} ipv4.ignore-auto-dns yes
 nmcli connection modify ${PUBL_CONN} ipv4.dns ${LAB_DNS_IP}
 nmcli connection modify ${PUBL_CONN} ipv4.dns-search ${LAB_DOM}
@@ -348,12 +348,12 @@ task_output_limit = 500
 sort_order = none
 _EOF_
 
-### Set up or fix SSH keys for root access 
+### Set up or fix SSH keys for root access
 NODES="$(grep -E 'vertica-node|ns1' /etc/hosts | awk '{print $3}')"
 echo "====== Set up SSH authentication for PoC hosts ======"
 echo "(say 'yes' if prompted and enter password repeatedly)"
 for node in ${NODES}
-do 
+do
     if [ ${IS_AWS_UUID^^} == "EC2" ]; then
 	ssh -i $KEYPATH ${DBUSER}@${node} sudo cp /home/${DBUSER}/.ssh/authorized_keys /root/.ssh/authorized_keys
     else
@@ -367,17 +367,17 @@ ansible all -o -m ping
 ### Configure PoC hosts
 # Rename the hosts to match /etc/hosts and Ansible inventory
 ansible vertica_nodes -o -m hostname -a "name={{ inventory_hostname_short }}"
-# Remove any DNS servers on the public interfaces and use only the private interface
-ansible vertica_nodes -o -m nmcli -a "type=ethernet conn_name=${PUBL_NDEV} dns4='' dns4_search='' state=present"
 # Add dnsmasq DNS to the private interface (and public interface if they're the same)
 ansible vertica_nodes -o -m nmcli \
     -a "type=ethernet conn_name=${PRIV_NDEV} gw4=${LAB_GW} dns4=${LAB_DNS_IP} dns4_search=${LAB_DOM} state=present"
 # Set the private interface to be on the trusted zone for the firewall (if it is a separate device)
 if [ "${PRIV_NDEV}" != "${PUBL_NDEV}" ]; then
     ansible vertica_nodes -m ansible.posix.firewalld \
-	-a "interface=${PRIV_NDEV} zone=trusted permanent=true state=enabled immediate=yes"
+	   -a "interface=${PRIV_NDEV} zone=trusted permanent=true state=enabled immediate=yes"
     ansible vertica_nodes -m shell \
-	-a "nmcli connection modify ${PRIV_NDEV} connection.zone trusted"
+	   -a "nmcli connection modify ${PRIV_NDEV} connection.zone trusted"
+    # Remove any DNS servers on the public interfaces and use only the private interface
+    ansible vertica_nodes -o -m nmcli -a "type=ethernet conn_name=${PUBL_NDEV} dns4='' dns4_search='' state=present"
 fi
 # Restart the networking and firewall
 ansible vertica_nodes -m service -a "name=network state=restarted"
@@ -401,4 +401,4 @@ ansible all -m shell -a 'ntpstat'
 ansible all -m shell -a 'timedatectl status | grep "NTP synchronized:"'
 ansible all -m shell -a 'date'
 
-set +x 
+set +x
