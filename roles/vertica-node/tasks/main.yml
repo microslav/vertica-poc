@@ -1,0 +1,346 @@
+######################################################################
+#
+# Common configuration steps for Vertica database nodes
+#
+# Assumptions:
+#   1. Ansible user is root, and "become" needed for other users. 
+#
+######################################################################
+---
+### Prepare the nodes for Vertica install
+- name: Make sure we always use /bin/bash
+  shell:
+    cmd: |
+      [[ -x /bin/sh.ORIG ]] || ( mv /bin/sh /bin/sh.ORIG && ln -s /bin/bash /bin/sh )
+      ls -hal /bin/sh /bin/sh.ORIG
+  register: out
+- debug:
+    msg: "{{ out.stdout_lines }}"
+
+- name: Get the block device holding the {{ dbuser }} home directory
+  shell:
+    cmd: "df --output=source ~/ | tail -1 | xargs ls -l | awk -F/ '{print $NF}'"
+  become: yes
+  become_user: "{{ dbuser }}"
+  register: out
+- set_fact:
+    user_dev: "{{ out.stdout_lines[0] }}"
+- debug:
+    msg: "It appears that {{ dbuser }} lives on the /dev/{{ user_dev }} block device" 
+- name: Set Block IO scheduler none (for SSD); assumes /dev/{{ user_dev }} device
+  shell:
+    cmd: |
+      echo none > /sys/block/{{ user_dev }}/queue/scheduler
+      echo "echo none > /sys/block/{{ user_dev }}/queue/scheduler" >> /etc/rc.d/rc.local
+      cat /sys/block/{{ user_dev }}/queue/scheduler
+      grep scheduler /etc/rc.d/rc.local
+  register: out
+- debug:
+    msg: "{{ out.stdout_lines }}"
+
+- name: Set the block device for /home/{{ dbuser }} read-ahead settings to 8192 for Vertica
+  shell:
+    cmd: |
+      /sbin/blockdev --setra 8192 /dev/{{ user_dev }}
+      echo "/sbin/blockdev --setra 8192 /dev/{{ user_dev }}" >> /etc/rc.d/rc.local
+      /sbin/blockdev --getra /dev/{{ user_dev }}
+      grep setra /etc/rc.d/rc.local
+  register: out
+- debug: var=out
+
+- name: Make sure the /etc/rc.d/rc.local file is executable so the added commands run across reboots
+  file:
+    path: "/etc/rc.d/rc.local"
+    state: touch
+    mode: 'u+x'
+  register: out
+- debug: var=out
+
+- name: Set Timezone and Language in /etc/profile
+  shell:
+    cmd: |
+      [[ $(grep -q "{{ host_tz }}" /etc/profile) ]] || ( echo export TZ="{{ host_tz }}" | tee -a /etc/profile )
+      [[ $(grep -q "{{ host_lang }}" /etc/profile) ]] || ( echo export LANG="{{ host_lang }}" | tee -a /etc/profile )
+      grep -iE "LANG|TZ" /etc/profile
+  register: out
+  ignore_errors: no
+- debug:
+    msg: "{{ out.stdout_lines }}"
+
+- name: Tune cluster with correct vm.swappiness and to handle more TCP connections
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_set: yes
+  with_items:
+    - { name: "vm.swappiness", value: "1" }
+    - { name: "net.ipv4.tcp_fin_timeout", value: "20" }
+    - { name: "net.ipv4.tcp_tw_reuse", value: "1" }
+    - { name: "net.ipv4.ip_local_port_range", value: "16384 65535" }
+  register: out
+  ignore_errors: no
+- debug: var=out
+
+- name: Allow SSH TCP Forwarding for VBR Backups to work
+  shell:
+    cmd: "sed -i -e '/^#AllowTcpForwarding yes/s/^#//' -e 's/^#MaxStartups .*$/MaxStartups 1088:30:2048/g' /etc/ssh/sshd_config \
+             && systemctl restart sshd.service \
+             && (sshd -T | grep -iE 'MaxStartups|AllowTCPForwarding')"
+  register: out
+- debug: var=out
+
+# Install the Pure Storage RapidFile Toolkit on the nodes for any ETL data wrangling
+# Ensure that the RapidFile Toolkit RPM is copied into the files directory for the role
+- name: Copy RFT package to hosts
+  copy:
+    src: "{{ rft_pkg }}"
+    dest: "/tmp/"
+    mode: "0644"
+  register: out
+  ignore_errors: no
+- debug: var=out
+- name: Install the package on the host
+  package:
+    name: "/tmp/{{ rft_pkg }}"
+    state: present
+  register: out
+  ignore_errors: no
+- debug:
+    msg: "{{ out.results }}"
+- name: Gather package facts
+  package_facts:
+- name: Verify that the package is installed
+  debug:
+    msg: "{{ ansible_facts.packages['rapidfile'] | length }} version(s) of RapidFile Toolkit installed"
+  when: "'rapidfile' in ansible_facts.packages"
+
+- name: Disable SE Linux
+  shell:
+    cmd: |
+      setenforce 0
+      echo 0 > /sys/fs/selinux/enforce
+      getenforce
+      sed -i "s/SELINUX=enforcing/SELINUX=disabled/g" /etc/selinux/config
+      grep SELINUX= /etc/selinux/config | grep -v '^\#'
+  register: out
+  ignore_errors: no
+- debug:
+    msg: "{{ out.stdout_lines }}"
+# Still need to reboot to completely get rid of SE Linux
+
+- name: Get perl version
+  shell:
+    cmd: perl -e 'print substr($^V, 1)'
+  register: out
+  failed_when: out.stdout_lines[0] is version('5.0.0','<')
+- debug:
+    msg: "Perl version is {{ out.stdout_lines }}"
+
+- name: Check socket states for required ports not being used
+  shell:
+    cmd: ss -atupn | grep -E ':5433|:5434|:5444|:5450|:4803|:4804|:6543|:14159|:14160|:14161|:50000'
+  register: out
+  ignore_errors: yes
+  failed_when: out.rc != 1
+- debug:
+    msg: "{{ out.stderr_lines }}"
+
+- name: Add Vertica ports to the firewall
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    immediate: yes
+    state: enabled
+  with_items:
+    - "4803/tcp"          # Spread client port
+    - "5433-5434/tcp"     # Vertica client port
+    - "5444/tcp"          # MC and node agent comms
+    - "5450/tcp"          # MC port in case we install MC on a node
+    - "14159-14161/tcp"   # Ports used by vnetperf for bandwidth tests
+    - "50000/tcp"         # Port used by rsync for VBR
+    - "4803-4804/udp"     # Spread daemon port
+    - "5433/udp"          # Intra- and inter-cluster comms
+    - "6543/udp"          # Spread monitor port
+    - "14159-14161/udp"   # Ports used by vnetperf for bandwidth tests
+
+- name: Check that Huge Pages set to Always
+  shell:
+    cmd: cat /sys/kernel/mm/transparent_hugepage/enabled
+  register: out
+  failed_when: "'[always]' not in out.stdout_lines[0]"
+- debug:
+    msg: "{{ out.stdout_lines }}"
+
+# Install the Vertica RPM on all the Vertica nodes
+# Ensure that the Vertica RPM is copied into the files directory for the role
+- name: Copy the Vertica package to hosts
+  copy:
+    src: "{{ vertica_pkg }}"
+    dest: "/tmp/"
+    mode: "0644"
+  register: out
+- debug: var=out
+- name: Install the Vertica package
+  package:
+    name: "/tmp/{{ vertica_pkg }}"
+    state: present
+  become: yes
+  register: out
+- debug: var=out.results
+- name: Gather package facts
+  package_facts:
+- name: Verify that the Vertica package is installed
+  debug:
+    msg: "{{ ansible_facts.packages['vertica'] | length }} version(s) of Vertica installed"
+  when: "'vertica' in ansible_facts.packages"
+  failed_when: "'vertica' not in ansible_facts.packages"
+
+- name: Create Vertica custom paths file for users to find Vertica binaries in their path
+  blockinfile:
+    dest: "/etc/profile.d/custom-path.sh"
+    block: 'PATH=$PATH:/opt/vertica/sbin:/opt/vertica/bin'
+    marker: '# {mark} ANSIBLE MANAGED BLOCK add Vertica binaries'
+    mode: '0644'
+
+### Configure tuned for lowering latency and improving response times
+- name: Create tuned configuration directory
+  file:
+    path: "{{ tuned_config_dir }}"
+    state: directory
+    mode: "755"
+
+- name: Copy tuned configuration for Vertica to the hosts
+  copy:
+    src: "{{ tuned_file }}"
+    dest: "{{ tuned_config_dir }}"
+    mode: "644"
+
+- name: Enable and start tuned service
+  systemd:
+    name: tuned
+    state: started
+    enabled: yes
+- name: Gather service facts
+  service_facts:
+- name: Check tuned status
+  debug:
+    msg: "{{ ansible_facts.services['tuned.service'] }}"
+
+- name: Configure and verify tuned is working
+  shell:
+    cmd: |
+      tuned-adm profile vertica-performance
+      sleep 15
+      tuned-adm verify
+      grep -i mhz /proc/cpuinfo
+  register: out
+- debug:
+    msg: "{{ out.stdout_lines }}"
+### Revert to defaults by running "tuned-adm recommend" on hosts
+
+### Reboot the Vertica nodes to clear SEL and make sure everything is stable
+- name: Reboot the Vertica nodes to clear SEL and make sure everything is stable
+  reboot:
+    pre_reboot_delay: 60
+    post_reboot_delay: 60
+    reboot_timeout: 600
+  register: out
+- debug: var=out
+
+### Run Vertica performance validation tests
+- name: Run Vertica performance validation tests
+  block:
+    - name: Create or check local destination directory
+      file:
+        path: "{{ vperf_dir }}/"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      run_once: yes
+    - name: Gather CPU performance data
+      shell:
+        cmd: "/opt/vertica/bin/vcpuperf | tee /tmp/vcpuperf_{{ hosts_group }}_{{ inventory_hostname_short }}.out 2>&1"
+      become: yes
+      become_user: "{{ dbuser }}"
+      become_method: su
+    - name: Fetch CPU performance results into local directory
+      fetch:
+        src: "/tmp/vcpuperf_{{ hosts_group }}_{{ inventory_hostname_short }}.out"
+        dest: "{{ vperf_dir }}/"
+        flat: yes
+    - name: Allow vnetperf ports through the firewall in case no dedicated private interface
+      ansible.posix.firewalld:
+        port: "14159-14161/tcp"
+        permanent: no
+        state: enabled 
+        zone: public
+    - name: Gather network IO performance
+      shell:
+        cmd: >-
+          /opt/vertica/bin/vnetperf --duration=5 --hosts={{ vnodes_ips }} --identity-file=~/.ssh/vertica-poc
+          --vertica-install={{ vbin_path }} --address-family=4 > /tmp/vnetperf_{{ hosts_group }}_{{ inventory_hostname_short }}.out
+          2>&\1
+      become: yes
+      become_user: "{{ dbuser }}"
+      become_method: su
+      run_once: yes
+    - name: Block vnetperf ports again in Public zone
+      ansible.posix.firewalld:
+        port: "14159-14161/tcp"
+        permanent: no
+        state: disabled 
+        zone: public
+    - name: Fetch Network performance results into local directory
+      fetch:
+        src: "/tmp/vnetperf_{{ hosts_group }}_{{ inventory_hostname_short }}.out"
+        dest: "{{ vperf_dir }}/"
+        flat: yes
+      run_once: yes
+    - name: Gather root drive IO performance
+      shell:
+        cmd: >-
+          /opt/vertica/bin/vioperf --duration={{ vperf_io_dur }}s --log-interval={{ vperf_io_logdur }}s --thread-count=16
+          {{ vperf_io_locpath }} >/tmp/vioperf_{{ hosts_group }}_LOC_{{ inventory_hostname_short }}.out 2>&\1
+      become: yes
+      become_user: "{{ dbuser }}"
+      become_method: su
+    - name: Fetch performance results into local directory
+      fetch:
+        src: "/tmp/vioperf_{{ hosts_group }}_LOC_{{ inventory_hostname_short }}.out"
+        dest: "{{ vperf_dir }}/"
+        flat: yes
+    - name: Gather FlashBlade NFS IO performance
+      shell:
+        cmd: >-
+          /opt/vertica/bin/vioperf --duration={{ vperf_io_dur }}s --log-interval={{ vperf_io_logdur }}s --thread-count=16
+          {{ vperf_io_nfspath }} >/tmp/vioperf_{{ hosts_group }}_NFS_{{ inventory_hostname_short }}.out 2>&\1
+      become: yes
+      become_user: "{{ dbuser }}"
+      become_method: su
+    - name: Fetch performance results into local directory
+      fetch:
+        src: "/tmp/vioperf_{{ hosts_group }}_NFS_{{ inventory_hostname_short }}.out"
+        dest: "{{ vperf_dir }}/"
+        flat: yes
+  when: vperf_runsteps
+
+- name: Make sure VMart output data destination directories exist on all Vertica hosts
+  block:
+    - name: 
+      file:
+        path: "{{ vmart_dest_dir }}"
+        state: directory
+      become: yes
+      become_user: "{{ dbuser }}"
+      become_method: su
+      register: out
+    - debug: var=out
+  when: vmart_runsteps
+
+- pause: 
+    prompt: |
+      Check that the last step was successful.
+      If everying looks good, hit Ctrl-C,C
+  when: check_exec
+
+...

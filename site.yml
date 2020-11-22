@@ -1,0 +1,37 @@
+---
+# This playbook will deploy a Vertica cluster and Management Console for FlashBlade PoC's
+# Assuming that target hosts are running RHEL/CentOS flavored OS
+- name: Configure the FlashBlade for use with Vertica and this Playbook
+  hosts: mc
+  collections:
+    - purestorage.flashblade
+  gather_facts: yes
+  roles:
+  - storage
+
+- name: Install packages and perform common configurations on all nodes
+  hosts: all
+  gather_facts: yes
+  roles:
+  - common
+
+- name: Configuration common to all Vertica nodes
+  hosts: vertica_nodes
+  gather_facts: yes
+  roles:
+  - vertica-node
+
+- name: Configure and activate database on Primary nodes
+  hosts: primary_nodes
+  gather_facts: yes
+  roles:
+  - primary-node
+
+- name: Configure the Management Console
+  hosts: mc
+  gather_facts: yes
+  roles:
+  - mc
+
+...
+

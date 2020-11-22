@@ -1,0 +1,105 @@
+######################################################################
+#
+# Configuration steps for Vertica Management Console host
+#
+# Assumptions:
+#   1. Ansible user is root, and "become" needed for other users. 
+#   2. There is only a single node in the group assigned the MC role
+#
+######################################################################
+---
+# Install and configure the Vertica Management Console
+- name: Check socket states for required ports not being used
+  shell:
+    cmd: ss -atupn | grep -E ':5450'
+  register: out
+  ignore_errors: yes
+  failed_when: out.rc != 1
+- debug:
+    msg: "{{ out.stderr_lines }}"
+
+- name: Copy the Vertica Management Console package to hosts
+  copy:
+    src: "{{ console_pkg }}"
+    dest: "/tmp/"
+    mode: "0644"
+  register: out
+- debug: var=out
+
+- name: Install the Vertica Management Console package
+  package:
+    name: "/tmp/{{ console_pkg }}"
+    state: present
+  become: yes
+  register: out
+- debug: var=out.results
+- name: Gather package facts
+  package_facts:
+- name: Verify that the Vertica Management Console package is installed
+  debug:
+    msg: "{{ ansible_facts.packages['vertica-console'] | length }} version(s) of Vertica installed"
+  when: "'vertica-console' in ansible_facts.packages"
+
+- name: Wait and clean up from the frequently broken install
+  pause:
+    seconds: 10
+- name: Stop the Console service (even in the unlikely event it is running)
+  systemd:
+    name: vertica-consoled
+    state: stopped
+- name: Gather service facts
+  service_facts:
+- name: Check tuned status
+  debug:
+    msg: "{{ ansible_facts.services['tuned.service'] }}"
+
+- name: Find the Java process to kill
+  shell: pgrep --full 'vconsole.home'
+  ignore_errors: yes
+  register: pid
+- debug:
+    msg: "{{ pid }}"
+- name: Kill the Java process if it existed
+  shell:
+    cmd: "kill -9 {{ pid.stdout_lines[0] }}"
+  ignore_errors: yes
+  when: pid.stdout_lines | length > 0
+
+- name: Start the Console service again
+  systemd:
+    name: vertica-consoled
+    state: started
+    enabled: yes
+- name: Wait and check that the service is running
+  pause:
+    seconds: 10
+- name: Gather service facts
+  service_facts:
+- name: Check vertica-consoled status
+  debug:
+    msg: 
+      - "Status for the vertica-consoled service --"
+      - "{{ ansible_facts.services['vertica-consoled.service'] }}"
+      - "If all looks good, point your browser at https://{{ ansible_default_ipv4.address }}:5450/"
+
+### This seems to frequently fail. Often there's a stuck Java process for MC. The remediation is to:
+###   1. Stop the MC service: systemctl stop vertica-consoled
+###   2. Kill the Java process: kill -9 $(ps aux | grep -F 'vconsole.home=/opt/vconsole' | grep -v grep | awk '{print $2}')
+###   3. Start the MC service again: systemctl start vertica-consoled 
+###   4. Wait a few seconds and check the status: systemctl status vertica-consoled 
+###   5. Open a browser to https://<vertica-jumpbox>:5450/ and check for MC interface
+###
+
+### Once MC is up and running, it may be necessary to tunnel the MC port through several hops, 
+### especially if the subnet isn't directly accessible from your laptop. Use a command
+### similar to this one to set up the tunnels:
+###   ssh -f -L 5451:localhost:5451 My_Jumpbox ssh -f -L 5451:localhost:5450 -N My_MC_Node
+
+- pause: 
+    prompt: |
+      Check that the last step was successful.
+      If everying looks good, hit Ctrl-C,C
+  when: check_exec
+
+...
+

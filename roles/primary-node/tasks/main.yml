@@ -1,0 +1,151 @@
+######################################################################
+#
+# Special steps on a primary cluster node
+#
+# Assumptions:
+#   1. Ansible user is root, and "become" needed for other users. 
+#
+######################################################################
+---
+### Configure the hosts to be Vertica nodes
+- name: Delete any old temporary config files
+  file:
+    path: "{{ loc_cfg_path }}"
+    state: absent
+  delegate_to: localhost
+
+- name: Create the configuration file for the installation
+  blockinfile:
+    path: "{{ loc_cfg_path }}"
+    block: |
+      accept_eula = True
+      license_file = {{ nod_lic_path }}
+      direct_only = {{ nod_vms }}
+      failure_threshold = FAIL
+      hosts = {{ groups['vertica_nodes'] | map('extract', hostvars, ['inventory_hostname_short']) | join(',') }}
+      ipv4 = True
+      ipv6 = False
+      record_to = /root/recorded_vertica_install.cfg
+      ssh_identity = /root/.ssh/{{ keypath|basename }}
+      vertica_dba_user = {{ dbuser }}
+      vertica_dba_group = {{ dbgroup }}
+    create: yes
+  delegate_to: localhost
+
+- name: Copy the Vertica files to install host
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0600"
+  with_items:
+    - { src: "{{ loc_cfg_path }}", dest: "{{ nod_cfg_path }}" }
+    - { src: "{{ loc_lic_path }}", dest: "{{ nod_lic_path }}" }
+  run_once: yes
+  register: out
+- debug: var=out
+
+- name: Run the Vertica Install Script on the install host
+  shell:
+    cmd: "/opt/vertica/sbin/install_vertica --config-file {{ nod_cfg_path }} --clean"
+  run_once: yes
+  register: out
+- debug: var=out
+  run_once: yes
+
+- name: Clean up the temporary license file on the install host
+  file:
+    path: "{{ nod_lic_path }}"
+    state: absent
+  run_once: yes
+
+### Create and tune a new empty database
+- name: Run the Vertica create_db script
+  shell:
+    cmd: "{{ vdb_create_db_cmd }}"
+  run_once: yes
+  become: yes
+  become_user: "{{ dbuser }}"
+  become_method: su
+  register: out
+- debug: var=out
+  run_once: yes
+
+- name: Run FlashBlade-specific tuning for the database
+  shell:
+    cmd: "{{ vdb_tune_db_cmd }}"
+  run_once: yes
+  become: yes
+  become_user: "{{ dbuser }}"
+  become_method: su
+  register: out
+- debug: var=out
+  run_once: yes 
+
+### Set up and run the VMart demo on the Vertica Nodes
+- name: Set up and run the VMart demo on the Vertica Nodes
+  block:
+    - name: Define the VMart database schema in the database
+      shell:
+        cmd: "vsql -ef vmart_define_schema.sql"
+        chdir: "{{ vmart_code_dir }}"
+      run_once: yes
+      become: yes
+      become_user: "{{ dbuser }}"
+      become_method: su
+      register: out
+    - debug: var=out
+      run_once: yes
+
+    - name: Run the VMart data generator script
+      shell:
+        cmd: "{{ vmart_gen_cmd }}"
+        chdir: "{{ vmart_code_dir }}"
+      run_once: yes
+      become: yes
+      become_user: "{{ dbuser }}"
+      become_method: su
+      register: out
+    - debug: var=out
+      run_once: yes
+
+    - name: Copy the parallel load SQL code to the Vertica node
+      copy:
+        src: "{{ vmart_pload_sql }}"
+        dest: "{{ vmart_dest_dir }}"
+        owner: "{{ dbuser }}"
+        group: "{{ dbgroup }}"
+        mode: '0755'
+      run_once: yes
+      register: out
+    - debug: var=out
+
+    - name: Load the generated data into the database (parallel via ON ANY NODE)
+      shell:
+        cmd: "vsql -ef {{ vmart_pload_sql }}"
+        chdir: "{{ vmart_dest_dir }}"
+      run_once: yes
+      become: yes
+      become_user: "{{ dbuser }}"
+      become_method: su
+      register: out
+    - debug: var=out
+      run_once: yes
+
+    - name: Query the database with some example queries on all nodes
+      shell:
+        cmd: "vsql -if vmart_queries.sql | grep 'Time:'"
+        chdir: "{{ vmart_code_dir }}"
+      become: yes
+      become_user: "{{ dbuser }}"
+      become_method: su
+      register: out
+    - debug: var=out
+  when: vmart_runsteps
+
+- pause: 
+    prompt: |
+      Check that the last step was successful.
+      If everying looks good, hit Ctrl-C,C
+  when: check_exec
+
+...

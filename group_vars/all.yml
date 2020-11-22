@@ -1,0 +1,194 @@
+#######################################################################
+#
+# Variables for the configuration steps common across all nodes
+#
+#######################################################################
+---
+### PoC and Environment Settings
+hosts_group: "{{ lookup('env','POC_ANSIBLE_GROUP') }}"
+
+### Pause execution at the end of each role
+check_exec: "{{ lookup('env','VA_PAUSE_CHECK') }} | bool" 
+
+### FlashBlade configuration info
+# DNS name or IP address for FlashBlade data and mangement VIPs
+fb_data: "poc-fb-data"
+fb_mgmt: "poc-fb-mgmt"
+# Management token (!!! Should be in a vault !!!)
+fb_api_token: "{{ lookup('env','PUREFB_API') }}"
+# Storage details for the Vertica deployment
+fb_fs_name: "vertica"
+fb_fs_size: "16T"
+fb_s3_acct: "vertica"
+fb_s3_user: "{{ lookup('env','DBUSER') }}"
+fb_s3_bucket: "vertica"
+
+# Where to store the generated access info
+aws_config_path: "/tmp/aws_credentials"
+auth_config_path: "/tmp/auth_params.conf"
+
+### Timezone and Language to set on the hosts
+host_tz: "{{ lookup('env','POC_TZ') }}"
+host_lang: "en_US.UTF-8"
+
+### SSH Keys to use for the deployment
+### Exported to environment from vertica_poc_prep.sh
+keyname: "{{ lookup('env','KEYNAME') }}"
+keypath: "{{ lookup('env','KEYPATH') }}"
+pubpath: "{{ lookup('env','PUBPATH') }}"
+privnet: "{{ lookup('env','LAB_PRIV_NET') }}"
+
+### Database User Info
+dbuser: "{{ lookup('env','DBUSER') }}"
+dbgroup: "verticadba"
+dbreal: "Vertica DBA"
+dbpwhash: "$6$9bcWrFWE$ast758GlvSP5O0AcxHA16olRWLf87gtboraARI3BBwe/Bb8sTEP6N5UipxOU4XtEdBCnMCRq2YcPDi31AfJ0U."
+### !!! Password hash should be in a vault; Default is "vertica1$" !!!
+
+### URL for the EPEL repository for the target distro
+extras_uri: "{{ lookup('env','EXTRAS_URI') }}"
+
+### Packages to install on the hosts
+sys_packages: 
+  - open-vm-tools
+  - nfs-utils
+  - bind-utils
+  - ntp
+  - tzdata
+  - dialog
+  - gdb
+  - mcelog
+  - wget
+  - git
+  - kernel-devel
+  - kernel-tools
+  - gcc
+  - bc
+  - dracut
+  - make
+  - python-pip
+  - perl
+  - npm
+  - eject
+  - inxi
+perf_packages:
+  - time
+  - sysstat
+  - strace
+  - traceroute
+  - atop
+  - lsof
+  - tuned
+  - dstat
+  - htop
+  - iftop
+  - iotop
+  - pv
+comfy_packages:
+  - mosh
+  - tmux
+  - emacs-nox
+  - emacs-yaml-mode
+  - parallel
+  - pigz
+  - jq
+
+# Golang information for installation
+go_ver:  "1.15.5"
+go_os:   "linux"
+go_arch: "amd64"
+go_url:  "https://dl.google.com/go"
+go_path: "/usr/local/go/bin"
+
+# s5cmd information for installation (s5cmd 1.2 doesn't seem to work for some reason)
+s5cmd_url: "https://github.com/peak/s5cmd/releases/download/v1.1.0/s5cmd_1.1.0_Linux-64bit.tar.gz"
+
+# RapidFile Toolkit RPM
+rft_pkg: "rapidfile-1.0.0-beta.4-Linux.rpm"
+
+# Vertica RPMs
+vertica_pkg: "vertica-10.0.1-0.x86_64.RHEL6.rpm"
+console_pkg: "vertica-console-10.0.1-0.x86_64.RHEL6.rpm"
+
+# Info for tuned
+tuned_file: "tuned.conf"
+tuned_config_dir: "/etc/tuned/vertica-performance"
+
+# Vertica v*perf test info
+vperf_runsteps: "{{ lookup('env','VA_RUN_VPERF') }} | bool" 
+vperf_dir: "vperf_reports"
+vbin_path: "/opt/vertica/bin"
+vnodes_ips: "{{ groups['vertica_nodes'] | map('extract', hostvars, ['ansible_facts',lookup('env','PRIV_NDEV'),'ipv4','address']) | join(',') }}"
+vperf_io_dur: "240"
+vperf_io_logdur: "{{ ((vperf_io_dur|int)/4)|int }}"
+vperf_io_locpath: "/home/{{ dbuser }}/"
+vperf_io_nfspath: "/mnt/{{ fb_fs_name }}/"
+
+# Vertica Cluster and Database info
+vdb_name: "verticadb"
+vdb_shards_per_node: "2"
+nod_list: "{{ groups['vertica_nodes'] | map('extract', hostvars, ['ansible_facts',lookup('env','PRIV_NDEV'),'ipv4','address']) | join(',') }}"
+nod_names: "{{ groups[lookup('vars','hosts_group')] | map('extract', hostvars, ['inventory_hostname_short']) | join(',') }}"
+nod_count: "{{ groups[lookup('vars','hosts_group')] | length }}"
+nod_vms: "{{ lookup('env','VA_VIRTUAL_NODES') | bool }}" 
+vertica_cfg_name: "vertica_install.cfg"
+loc_cfg_path: "/tmp/{{ vertica_cfg_name }}"
+nod_cfg_path: "/root/{{ vertica_cfg_name }}"
+loc_lic_path: "license.key"
+nod_lic_path: "/tmp/license.key"
+vdb_s3_path: "s3://{{ fb_s3_bucket }}/prod/{{ vdb_name }}"
+vdb_auth_path: "/home/{{ dbuser }}/auth_params.conf"
+vdb_depot_path: "/home/{{ dbuser }}/depot"
+vdb_depot_size: "{{ lookup('env','VDB_DEPOT_SIZE') }}"
+init_nodes: "{{ groups['primary_nodes'] | map('extract', hostvars, ['inventory_hostname_short']) | join(',') }}"
+vdb_shard_count: "{{ (groups['primary_nodes']|length) * (vdb_shards_per_node|int) }}"
+vdb_create_db_cmd: >-
+  /opt/vertica/bin/admintools -t create_db
+  --force-cleanup-on-failure
+  --communal-storage-params={{ vdb_auth_path }}
+  --communal-storage-location={{ vdb_s3_path }}
+  --depot-path={{ vdb_depot_path }} --depot-size={{ vdb_depot_size }}
+  --database={{ vdb_name }}
+  --shard-count={{ vdb_shard_count }}
+  --hosts={{ init_nodes }}
+vdb_tune_db_cmd: |
+  vsql -ec "select set_config_parameter('AWSStreamingConnectionPercentage', 0);"
+  vsql -ec "select set_config_parameter('UseDepotForReads',1);"
+  vsql -ec "select set_config_parameter('UseDepotForWrites',0);"
+  vsql -ec "select set_config_parameter('AWSConnectionPoolSize', 128);"
+
+### VMart Example Demo Info 
+vmart_runsteps: "{{ lookup('env','VA_RUN_VMART') }} | bool" 
+vmart_file_cnt: 100
+vmart_sto_s_fact: 1300000000
+vmart_sto_o_fact: 130000000
+vmart_prod_dim: 13000
+vmart_stor_dim: 127
+vmart_prom_dim: 12
+vmart_vend_dim: 127
+vmart_cust_dim: 130000
+vmart_empl_dim: 1300
+vmart_ware_dim: 127
+vmart_ship_dim: 1300000
+vmart_page_dim: 1300
+vmart_call_dim: 130000
+vmart_onl_s_fact: 130000
+vmart_inv_fact: 130000
+vmart_years: "2003-2016"
+vmart_pload_sql: "vmart_parallel_load.sql"
+vmart_code_dir: "/opt/vertica/examples/VMart_Schema/"
+vmart_dest_dir: "/mnt/{{ fb_fs_name }}/vmart/"
+vmart_gen_cmd: >-
+  ./vmart_gen  
+  --files {{ vmart_file_cnt }} --store_sales_fact {{ vmart_sto_s_fact }} 
+  --store_orders_fact {{ vmart_sto_o_fact }} --product_dimension {{ vmart_prod_dim }} 
+  --store_dimension {{ vmart_stor_dim }} --promotion_dimension {{ vmart_prom_dim }}
+  --vendor_dimension {{ vmart_vend_dim }} --customer_dimension {{ vmart_cust_dim }} 
+  --employee_dimension {{ vmart_empl_dim }} --warehouse_dimension {{ vmart_ware_dim }} 
+  --shipping_dimension {{ vmart_ship_dim }} --online_page_dimension {{ vmart_page_dim }}
+  --callcenter_dimension {{ vmart_call_dim }} --online_sales_fact {{ vmart_onl_s_fact }} 
+  --inventory_fact {{ vmart_inv_fact }} --gen_load_script 
+  --years {{ vmart_years }} --datadirectory {{ vmart_dest_dir }}
+  --seed {{ 95603 | random(seed=inventory_hostname) }}
+
+...

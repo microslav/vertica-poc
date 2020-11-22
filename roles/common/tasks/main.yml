@@ -1,0 +1,368 @@
+######################################################################
+#
+# Common configuration steps for all nodes in the Vertica Outposts infra
+#
+# Assumptions:
+#   1. Ansible user is root, and "become" needed for other users. First 
+#      need to enable root access with "sudo vi /root/.ssh/authorized_keys" 
+#      and removing the command blocking login.
+#
+######################################################################
+---
+### Set up or update packages on all the hosts
+- name: "Get Extras Repository"
+  package:
+    name: "{{ extras_uri }}"
+    state: present
+
+- name: "Install deltarpm to speed up updates"
+  package:
+    name: deltarpm
+    state: present
+
+- name: "Update all packages to latest"
+  package:
+    name: "*"
+    state: latest
+    skip_broken: yes
+
+- name: "Install System Packages"
+  package:
+    name: "{{ sys_packages }}"
+    state: present
+    skip_broken: yes
+  ignore_errors: yes
+
+- name: "Install Performance Packages"
+  package:
+    name: "{{ perf_packages }}"
+    state: present
+    skip_broken: yes
+  ignore_errors: yes
+
+- name: "Install Comfort Packages"
+  package:
+    name: "{{ comfy_packages }}"
+    state: present
+    skip_broken: yes
+  ignore_errors: yes
+
+### Make sure we're operation in the right timezone
+- name: Set hosts timezone to {{ host_tz }}
+  timezone:
+    name: "{{ host_tz }}"
+
+### Get hostname resolution on all the hosts using /etc/hosts as a failback if DNS breaks
+- name: Update the /etc/hosts file on each node with all the names
+  lineinfile:
+    path: "/etc/hosts"
+    regexp: ".*\t{{ hostvars[item]['ansible_hostname'] }}"
+    line: "{{ hostvars[item]['ansible_env'].SSH_CONNECTION.split(' ')[2] }}\t{{ hostvars[item]['ansible_hostname'] }}"
+    state: present
+    backup: yes
+  when: (ansible_hostname != item) or (ansible_hostname == item)
+  with_items: "{{ groups[hosts_group] }}"
+
+- name: Get the FlashBlade Data IP address
+  shell:
+    cmd: getent hosts "{{ fb_data }}"
+  delegate_to: localhost
+  register: out
+- debug:
+    var: out.stdout_lines[0]
+- name: Update the /etc/hosts file with the FlashBlade Data VIP
+  lineinfile:
+    path: "/etc/hosts"
+    regexp: ".*\t{{ fb_data }}"
+    line: "{{ out.stdout_lines[0] }}"
+    state: present
+    backup: yes
+  when: out.stdout|length > 0
+
+- name: Get the FlashBlade Management IP address
+  shell:
+    cmd: getent hosts "{{ fb_mgmt }}"
+  register: out
+  delegate_to: localhost
+- debug:
+    var: out.stdout_lines[0]
+- name: Update the /etc/hosts file with the FlashBlade Management VIP
+  lineinfile:
+    path: "/etc/hosts"
+    regexp: ".*\t{{ fb_mgmt }}"
+    line: "{{ out.stdout_lines[0] }}"
+    state: present
+    backup: yes
+  when: out.stdout|length > 0
+
+### Configure root and the Vertica admin user
+- name: "Create {{ dbgroup }} group for the new user if it doesn't exist"
+  group:
+    name: "{{ dbgroup }}"
+    state: present
+  become: yes
+
+- name: "Create {{ dbuser }} user for {{ dbreal }}"
+  user:
+    name: "{{ dbuser }}"
+    comment: "{{ dbreal }}"
+    password: "{{ dbpwhash }}"
+    generate_ssh_key: yes
+    group: "{{ dbgroup }}"
+  become: yes
+
+- name: "Add {{ dbuser }} to nopasswd sudoers"
+  shell:
+    cmd: echo "{{ dbuser }} ALL = (root) NOPASSWD:ALL" | sudo tee "/etc/sudoers.d/{{ dbuser }}"
+  become: yes
+
+- name: "Change permissions on sudoers file so SSH is happy"
+  file:
+    path: "/etc/sudoers.d/{{ dbuser }}"
+    mode: '0440'
+  become: yes
+
+- name: Generate contents of .ssh directories
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode }}"
+    owner: "{{ item.user }}"
+    group: "{{ item.group }}"
+  with_items:
+    - { user: "root", group: "root", src: "{{ keypath }}", dest: "/root/.ssh/", mode: '0600' }
+    - { user: "root", group: "root", src: "{{ pubpath }}", dest: "/root/.ssh/", mode: '0644' }
+    - { user: "root", group: "root", src: "{{ pubpath }}", dest: "/root/.ssh/authorized_keys", mode: '0644' }
+    - { user: "{{ dbuser }}", group: "{{ dbgroup }}", src: "{{ keypath }}", dest: "/home/{{ dbuser }}/.ssh/", mode: '0600' }
+    - { user: "{{ dbuser }}", group: "{{ dbgroup }}", src: "{{ pubpath }}", dest: "/home/{{ dbuser }}/.ssh/", mode: '0644' }
+    - { user: "{{ dbuser }}", group: "{{ dbgroup }}", src: "{{ pubpath }}", dest: "/home/{{ dbuser }}/.ssh/authorized_keys", mode: '0644' }
+  become: yes
+
+- name: Create fixed symbolic links to the SSH keys
+  file:
+    path: "{{ item.dir }}/{{ item.link }}"
+    src: "{{ item.dir }}/{{ item.targ }}"
+    state: link
+  with_items:
+    - { targ: "{{ keypath|basename }}", dir: "/root/.ssh/", link: 'vertica-poc' }
+    - { targ: "{{ pubpath|basename }}", dir: "/root/.ssh/", link: 'vertica-poc.pub' }
+    - { targ: "{{ keypath|basename }}", dir: "/home/{{ dbuser }}/.ssh/", link: 'vertica-poc' }
+    - { targ: "{{ pubpath|basename }}", dir: "/home/{{ dbuser }}/.ssh/", link: 'vertica-poc.pub' }
+  become: yes
+
+- name: Generate .ssh/config file
+  copy:
+    content: |
+      Host vertica-* command mc {{ privnet }}.*
+        HostName %h
+        User {{ item.user }}
+        IdentityFile ~/.ssh/vertica-poc
+        StrictHostKeyChecking no
+        UserKnownHostsFile=/dev/null
+    dest: "{{ item.home }}/.ssh/config"
+    mode: '0600'
+    owner: "{{ item.user }}"
+    group: "{{ item.group }}"
+  with_items:
+    - { user: "root", group: "root", home: "/root" }
+    - { user: "{{ dbuser }}", group: "{{ dbgroup }}", home: "/home/{{ dbuser }}" }
+  become: yes
+
+- name: Create the .aws directory
+  file:
+    path: "{{ item.home }}/.aws"
+    state: directory
+    owner: "{{ item.user }}"
+    group: "{{ item.group }}"
+  with_items:
+    - { user: "root", group: "root", home: "/root" }
+    - { user: "{{ dbuser }}", group: "{{ dbgroup }}", home: "/home/{{ dbuser }}" }
+  become: yes
+
+  ### We need to make sure the FlashBlade playbook runs before this step happens
+- name: Copy FlashBlade S3 credentials to ~/.aws directory
+  copy:
+    src: "{{ aws_config_path }}"
+    dest: "{{ item.home }}/.aws/credentials"
+    mode: '0600'
+    owner: "{{ item.user }}"
+    group: "{{ item.group }}"
+  with_items:
+    - { user: "root", group: "root", home: "/root" }
+    - { user: "{{ dbuser }}", group: "{{ dbgroup }}", home: "/home/{{ dbuser }}" }
+  become: yes
+
+- name: Copy FlashBlade S3 credentials to ~/auth_params.conf for {{ dbuser }}
+  copy:
+    src: "{{ auth_config_path }}"
+    dest: "/home/{{ dbuser }}/"
+    mode: '0600'
+    owner: "{{ dbuser }}"
+    group: "{{ dbgroup }}"
+  become: yes
+
+- name: Delete the temporary local copies of the credentials for better security
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - "{{ aws_config_path }}"
+    - "{{ auth_config_path }}"
+
+### Install and configure Golang on all the hosts (for s5cmd)
+- name: Check if Go is already installed
+  stat:
+    path: "{{ go_path }}/go"
+  register: go_bin
+
+- name: Download and Extract the Golang binaries
+  unarchive:
+    src: "{{ go_url }}/go{{ go_ver }}.{{ go_os }}-{{ go_arch }}.tar.gz"
+    dest: /usr/local
+    remote_src: yes
+  when: not go_bin.stat.exists
+
+- name: Check if Go already in /etc/profile.d/custom-path.sh
+  shell:
+    cmd: grep 'bin/go' /etc/profile.d/custom-path.sh
+  ignore_errors: yes
+  register: go_custom_path
+- debug: var=go_custom_path
+
+- name: Add the Go bin directory to system-wide PATH
+  blockinfile:
+    dest: "/etc/profile.d/custom-path.sh"
+    block: 'PATH=$PATH:{{ go_path }}:$HOME/go/bin'
+    marker: "# {mark} ANSIBLE MANAGED BLOCK add Golang"
+    mode: '0644'
+    create: yes
+    backup: yes
+  when: go_custom_path.rc > 0
+
+- name: Get expected Go workspace
+  shell:
+    cmd: go env GOPATH
+  register: go_path
+- debug: var=go_path.stdout_lines
+
+- name: Create Go workspace directory
+  file:
+    path: "{{ go_path.stdout_lines[0] }}"
+    state: directory
+
+- name: Create Hello World src directory
+  vars:
+    hello_path: "{{ go_path.stdout_lines[0] }}/src/hello"
+  file:
+    path: "{{ hello_path }}"
+    state: directory
+    recurse: yes
+
+- name: Copy Hello World code over
+  vars:
+    hello_path: "{{ go_path.stdout_lines[0] }}/src/hello"
+  copy:
+    src: "hello.go"
+    dest: "{{ hello_path }}/hello.go"
+
+- name: Build and run Hello World with Go
+  vars:
+    hello_path: "{{ go_path.stdout_lines[0] }}/src/hello"
+  shell:
+    cmd: "cd {{ hello_path }} && go build && ./hello"
+  register: hello_out
+- debug: var=hello_out.stdout_lines
+
+### Install, configure, and test s5cmd
+- name: Get s5cmd release archive from GitHub
+  unarchive:
+    src: "{{ s5cmd_url }}"
+    dest: "/tmp"
+    remote_src: yes
+
+- name: Place copy of s5cmd in /usr/local/bin
+  copy:
+    src: "/tmp/s5cmd"
+    dest: "/usr/local/bin/"
+    remote_src: yes
+    mode: "0755"
+
+- name: Testing S3 Access -- generate test file
+  shell:
+    cmd: "dd if=/dev/urandom of=/tmp/s5cmd_testfile bs=1M count=100"
+  register: s5cmd_result
+- debug:
+    msg: "{{ s5cmd_result.stderr_lines }}"
+
+- name: Testing S3 Access -- copy test file to bucket
+  shell:
+    cmd: >-
+      s5cmd --endpoint-url {{ fb_data }}
+      cp /tmp/s5cmd_testfile s3://{{ fb_s3_bucket }}/{{ inventory_hostname_short }}/s5cmd_testfile
+  register: s5cmd_result
+- debug:
+    msg: "{{ s5cmd_result.stdout_lines }}"
+
+- name: Testing S3 Access -- list test files
+  shell:
+    cmd: >-
+      s5cmd --endpoint-url {{ fb_data }}
+      ls -H s3://{{ fb_s3_bucket }}/{{ inventory_hostname_short }}/*
+  register: s5cmd_result
+- debug:
+    msg: "{{ s5cmd_result.stdout_lines }}"
+
+- name: Testing S3 Access -- remove remote test file
+  shell:
+    cmd: >-
+      s5cmd --endpoint-url {{ fb_data }}
+      rm s3://{{ fb_s3_bucket }}/{{ inventory_hostname_short }}/s5cmd_testfile
+  register: s5cmd_result
+- debug:
+    msg: "{{ s5cmd_result.stdout_lines }}"
+
+- name: Testing S3 Access -- list empty bucket (error message)
+  shell:
+    cmd: >-
+      s5cmd --endpoint-url {{ fb_data }}
+      ls s3://{{ fb_s3_bucket }}/{{ inventory_hostname_short }}/
+  register: s5cmd_result
+  ignore_errors: yes
+- debug:
+    msg: "{{ s5cmd_result.stderr_lines }}"
+
+- name: Clean up local test file
+  file:
+    path: "/tmp/s5cmd_testfile"
+    state: absent
+
+### Mount the filesystem on the hosts for the database user
+- name: Create the mount point directory
+  file:
+    path: "/mnt/{{ fb_fs_name }}"
+    state: directory
+    owner: "{{ dbuser }}"
+    group: "{{ dbgroup }}"
+    mode: '0777'
+
+- name: Mount "{{ fb_data }}:/{{ fb_fs_name }}" filesystem at "/mnt/{{ fb_fs_name }}" for user "{{ dbuser }}"
+  mount:
+    fstype: nfs
+    path: "/mnt/{{ fb_fs_name }}"
+    src: "{{ fb_data }}:/{{ fb_fs_name }}"
+    state: mounted
+
+- name: "Check that the filesystem was mounted"
+  shell:
+    cmd: "df -h | grep /mnt/{{ fb_fs_name }}"
+  register: results
+- debug:
+    msg: "{{ results.stdout_lines }}"
+
+- pause: 
+    prompt: |
+      Check that the last step was successful.
+      If everying looks good, hit Ctrl-C,C
+  when: check_exec
+
+...
