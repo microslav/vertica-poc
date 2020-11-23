@@ -3,8 +3,8 @@
 # Configuration steps on the FlashBlade to prepare for the PoC
 #
 # Assumptions:
-#   1. Ansible user is root, and "become" needed for other users. First 
-#      need to enable root access with "sudo vi /root/.ssh/authorized_keys" 
+#   1. Ansible user is root, and "become" needed for other users. First
+#      need to enable root access with "sudo vi /root/.ssh/authorized_keys"
 #      if needed (e.g., on Outposts).
 #
 ######################################################################
@@ -33,10 +33,12 @@
       - all
     fb_url: "{{ fb_mgmt }}"
     api_token: "{{ fb_api_token }}"
+  ignore_errors: yes
+  # Ignore errors just in case. Usually due to self-signed TLS certificates
   register: blade_info
 - name: Show default information
   debug:
-    msg: 
+    msg:
       - "{{ blade_info['purefb_info']['default'] }}"
       - "{{ blade_info['purefb_info']['buckets'] }}"
 
@@ -111,7 +113,7 @@
     api_token: "{{ fb_api_token }}"
   when: fb_s3_bucket not in blade_info['purefb_info']['buckets']
 
-- pause: 
+- pause:
     prompt: |
       Check that the last step was successful.
       If everying looks good, hit Ctrl-C,C
