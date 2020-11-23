@@ -184,13 +184,14 @@ systemctl enable firewalld
 firewall-cmd --state
 
 # Only set up NAT if separate private interfaces
-if [ "${PRIV_CONN}" != "${PUBL_NDEV}" ]; then
+if [ "${PRIV_NDEV}" != "${PUBL_NDEV}" ]; then
+    echo "Setting up NAT on the Private Interface"
     # Add gateway address to the private interface
     nmcli connection modify ${PRIV_CONN} +ipv4.addresses "${LAB_GW}/${PRIV_PREFIX}"
     # Set up IP forwarding in the kernel for NAT (if not already set up)
-    if [ $(grep -Fq 'net.ipv4.ip_forward = 1' /etc/sysctl.d/ip_forward.conf) != 0 ]]; then
-	echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.d/ip_forward.conf
-	sysctl -p /etc/sysctl.d/ip_forward.conf
+    if [[ $(grep -Fq 'net.ipv4.ip_forward = 1' /etc/sysctl.d/ip_forward.conf) == 0 ]]; then
+	     echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.d/ip_forward.conf
+	     sysctl -p /etc/sysctl.d/ip_forward.conf
     fi
     # Set up NAT and configure zones
     firewall-cmd --permanent --direct --passthrough ipv4 -t nat -I POSTROUTING -o ${PUBL_NDEV} -j MASQUERADE -s ${PRIV_CIDR}
@@ -364,14 +365,18 @@ done
 ### Make sure Ansible is working
 ansible all -o -m ping
 
+### Install packages we'll need on the PoC
 ### Configure PoC hosts
 # Rename the hosts to match /etc/hosts and Ansible inventory
 ansible vertica_nodes -o -m hostname -a "name={{ inventory_hostname_short }}"
+# Install packages we'll need later
+ansible vertica_nodes -m package -a 'name=bind-utils,ntp,traceroute state=present'
 # Add dnsmasq DNS to the private interface (and public interface if they're the same)
 ansible vertica_nodes -o -m nmcli \
     -a "type=ethernet conn_name=${PRIV_NDEV} gw4=${LAB_GW} dns4=${LAB_DNS_IP} dns4_search=${LAB_DOM} state=present"
-# Set the private interface to be on the trusted zone for the firewall (if it is a separate device)
+# Network changes if private and public interfaces are separate devices
 if [ "${PRIV_NDEV}" != "${PUBL_NDEV}" ]; then
+    # Set the private interface to be on the trusted zone for the firewall
     ansible vertica_nodes -m ansible.posix.firewalld \
 	   -a "interface=${PRIV_NDEV} zone=trusted permanent=true state=enabled immediate=yes"
     ansible vertica_nodes -m shell \
@@ -384,13 +389,11 @@ ansible vertica_nodes -m service -a "name=network state=restarted"
 ansible vertica_nodes -m service -a "name=firewalld state=restarted"
 
 ### Test that dnsmasq DNS is working from the PoC hosts
-ansible vertica_nodes -m package -a 'name=bind-utils state=present'
 ansible vertica_nodes -o -m shell -a "sed -i 's|^hosts:\s*.*$|hosts:      dns files myhostname|g' /etc/nsswitch.conf"
 ansible vertica_nodes -o -m shell -a 'dig command google.com +short'
 ansible vertica_nodes -o -m shell -a "dig -x ${LAB_DNS_IP} +short"
 
 ### Set up NTP and synchronize time on all hosts
-ansible all -m package -a 'name=ntp state=present'
 ansible all -o -m shell -a 'timedatectl set-ntp true'
 ansible all -o -m shell -a "timedatectl set-timezone ${POC_TZ}"
 ansible all -m service -a "name=ntpd state=stopped"
