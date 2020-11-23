@@ -3,7 +3,7 @@
 # Common configuration steps for Vertica database nodes
 #
 # Assumptions:
-#   1. Ansible user is root, and "become" needed for other users. 
+#   1. Ansible user is root, and "become" needed for other users.
 #
 ######################################################################
 ---
@@ -26,7 +26,7 @@
 - set_fact:
     user_dev: "{{ out.stdout_lines[0] }}"
 - debug:
-    msg: "It appears that {{ dbuser }} lives on the /dev/{{ user_dev }} block device" 
+    msg: "It appears that {{ dbuser }} lives on the /dev/{{ user_dev }} block device"
 - name: Set Block IO scheduler none (for SSD); assumes /dev/{{ user_dev }} device
   shell:
     cmd: |
@@ -268,12 +268,6 @@
         src: "/tmp/vcpuperf_{{ hosts_group }}_{{ inventory_hostname_short }}.out"
         dest: "{{ vperf_dir }}/"
         flat: yes
-    - name: Allow vnetperf ports through the firewall in case no dedicated private interface
-      ansible.posix.firewalld:
-        port: "14159-14161/tcp"
-        permanent: no
-        state: enabled 
-        zone: public
     - name: Gather network IO performance
       shell:
         cmd: >-
@@ -284,12 +278,6 @@
       become_user: "{{ dbuser }}"
       become_method: su
       run_once: yes
-    - name: Block vnetperf ports again in Public zone
-      ansible.posix.firewalld:
-        port: "14159-14161/tcp"
-        permanent: no
-        state: disabled 
-        zone: public
     - name: Fetch Network performance results into local directory
       fetch:
         src: "/tmp/vnetperf_{{ hosts_group }}_{{ inventory_hostname_short }}.out"
@@ -326,7 +314,7 @@
 
 - name: Make sure VMart output data destination directories exist on all Vertica hosts
   block:
-    - name: 
+    - name:
       file:
         path: "{{ vmart_dest_dir }}"
         state: directory
@@ -337,7 +325,7 @@
     - debug: var=out
   when: vmart_runsteps
 
-- pause: 
+- pause:
     prompt: |
       Check that the last step was successful.
       If everying looks good, hit Ctrl-C,C
