@@ -134,9 +134,15 @@ export LAB_GW="${LAB_PRIV_NET}.${LAB_IP_SUFFIX}"
 export DBUSER="dbadmin"
 
 ### Install some basic packages
-yum install -y epel-release
-yum install -y dnf deltarpm
-dnf install -y $INITPKG
+if [ ${IS_AWS_UUID^^} == "EC2" ]; then
+  yum install -y ${EXTRAS_URI}
+  alias dnf=yum
+  dnf install -y deltarpm
+else
+  yum install -y epel-release
+  yum install -y dnf deltarpm
+fi
+dnf install -y ${INITPKG}
 
 ### Use pip to install Ansible to get newer version than EPEL
 pip install --upgrade pip
