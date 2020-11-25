@@ -172,12 +172,28 @@
 - name: If not enabled, modify to Always enable Huge Pages
   shell:
     cmd: |
-      sysctl -w vm.nr_hugepages=2048
-      echo "vm.nr_hugepages=2048" >> /etc/sysctl.conf
-      sysctl -p
-      echo "echo 'echo always > /sys/kernel/mm/transparent_hugepage/enabled'" >> etc/rc.local
+      echo 'echo always > /sys/kernel/mm/transparent_hugepage/enabled' >> /etc/rc.local
       cat /sys/kernel/mm/transparent_hugepage/enabled
   when: "'[always]' not in pages_result.stdout_lines[0]"
+  register: out
+- debug: var=out
+
+- name: Check that we have at least some swap configured
+  shell:
+    cmd: cat /proc/meminfo | grep 'SwapTotal:' | awk '{print $2/1024^2}'
+  register: swap_gb
+- debug:
+    msg: "Currently configured {{ swap_gb.stdout_lines[0] }}GB of swap"
+- name: Configure more swap if necessary
+  shell:
+    cmd: |
+      dd if=/dev/zero of=/swapfile bs=1G count=2
+      chmod 600 /swapfile
+      mkswap /swapfile
+      swapon /swapfile
+      swapon -s
+      echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+  when: swap_gb.stdout_lines[0]|float < 2.0
   register: out
 - debug: var=out
 
