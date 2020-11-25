@@ -82,7 +82,7 @@
       - "{{ ansible_facts.services['vertica-consoled.service'] }}"
       - "If all looks good, point your browser at https://{{ ansible_default_ipv4.address }}:5450/"
       - ""
-      - "If this host isn't directly accessible, you may need to run this on your laptop --"
+      - "If this host isn't directly accessible, you may need to create an SSH tunnel on your laptop --"
       - "   ssh -f -L 5451:localhost:5451 {{ mc_ssh_client }} ssh -f -L 5451:localhost:5450 -N {{ mc_ssh_here }}"
       - "then navigate to https://127.0.0.1:5451 on your laptop."
 
