@@ -24,8 +24,8 @@ export POC_ANSIBLE_GROUP="vertica"              # Ansible Vertica nodes host gro
 export POC_PREFIX="outpost-test"                # Short name for this POC
 export KEYNAME="miroslav-pstg-outpost-keys"     # Name of SSH key (without suffix)
 export LAB_DOM="vertica.lab"                    # Internal domain created for PoC
-export POC_DOM="us-west-1.compute.internal"     # External domain where PoC runs
-export POC_DNS="172.26.0.2"                     # External DNS IP where PoC runs
+export POC_DOM="puretec.purestorage.com"        # External domain where PoC runs
+export POC_DNS="10.21.93.16"                    # External DNS IP where PoC runs
 export POC_TZ="America/Los_Angeles"             # Timezone where PoC runs
 
 ### FlashBlade API Token (get via SSH to FlashBlade CLI; see Admin docs)
@@ -46,6 +46,8 @@ export EXTRAS_URI="https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.n
 export VDB_DEPOT_SIZE="512G"
 # Name of non-root user for the OS (e.g., dbadmin for Vertica AMI, ec2-user for AWS Linux AMI)
 export OS_USERNAME="ec2-user"
+# Name of Vertica database user (shouldn't need to be changed)
+export DBUSER="dbadmin"
 
 ### Internal gateway IP address suffix on private network. It's assigned to
 ### the Command host as a NAT gateway to the outside for other PoC hosts.
@@ -128,7 +130,7 @@ if [ "$PRETTY_NAME" == "$AZL2_NAME" ]; then
     # AZ Linux 2 doesn't have firewalld or NetworkManager/nmcli
     yum install -y ${EXTRAS_URI}
     alias dnf=yum
-    yum install -y deltarpm
+    yum install -y deltarpm nvme-cli
     yum install -y firewalld && systemctl start firewalld && systemctl enable firewalld
 else
     yum install -y epel-release

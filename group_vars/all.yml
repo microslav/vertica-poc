@@ -8,7 +8,7 @@
 hosts_group: "{{ lookup('env','POC_ANSIBLE_GROUP') }}"
 
 ### Pause execution at the end of each role
-check_exec: "{{ lookup('env','VA_PAUSE_CHECK') }} | bool" 
+check_exec: "{{ lookup('env','VA_PAUSE_CHECK') }} | bool"
 
 ### FlashBlade configuration info
 # DNS name or IP address for FlashBlade data and mangement VIPs
@@ -49,10 +49,11 @@ dbpwhash: "$6$9bcWrFWE$ast758GlvSP5O0AcxHA16olRWLf87gtboraARI3BBwe/Bb8sTEP6N5Uip
 extras_uri: "{{ lookup('env','EXTRAS_URI') }}"
 
 ### Packages to install on the hosts
-sys_packages: 
+sys_packages:
   - open-vm-tools
   - nfs-utils
   - bind-utils
+  - nvme-cli
   - ntp
   - tzdata
   - dialog
@@ -115,7 +116,7 @@ tuned_file: "tuned.conf"
 tuned_config_dir: "/etc/tuned/vertica-performance"
 
 # Vertica v*perf test info
-vperf_runsteps: "{{ lookup('env','VA_RUN_VPERF') }} | bool" 
+vperf_runsteps: "{{ lookup('env','VA_RUN_VPERF') }} | bool"
 vperf_dir: "vperf_reports"
 vbin_path: "/opt/vertica/bin"
 vnodes_ips: "{{ groups['vertica_nodes'] | map('extract', hostvars, ['ansible_facts',lookup('env','PRIV_NDEV'),'ipv4','address']) | join(',') }}"
@@ -130,7 +131,7 @@ vdb_shards_per_node: "2"
 nod_list: "{{ groups['vertica_nodes'] | map('extract', hostvars, ['ansible_facts',lookup('env','PRIV_NDEV'),'ipv4','address']) | join(',') }}"
 nod_names: "{{ groups[lookup('vars','hosts_group')] | map('extract', hostvars, ['inventory_hostname_short']) | join(',') }}"
 nod_count: "{{ groups[lookup('vars','hosts_group')] | length }}"
-nod_vms: "{{ lookup('env','VA_VIRTUAL_NODES') | bool }}" 
+nod_vms: "{{ lookup('env','VA_VIRTUAL_NODES') | bool }}"
 vertica_cfg_name: "vertica_install.cfg"
 loc_cfg_path: "/tmp/{{ vertica_cfg_name }}"
 nod_cfg_path: "/root/{{ vertica_cfg_name }}"
@@ -157,8 +158,8 @@ vdb_tune_db_cmd: |
   vsql -ec "select set_config_parameter('UseDepotForWrites',0);"
   vsql -ec "select set_config_parameter('AWSConnectionPoolSize', 128);"
 
-### VMart Example Demo Info 
-vmart_runsteps: "{{ lookup('env','VA_RUN_VMART') }} | bool" 
+### VMart Example Demo Info
+vmart_runsteps: "{{ lookup('env','VA_RUN_VMART') }} | bool"
 vmart_file_cnt: 100
 vmart_sto_s_fact: 1300000000
 vmart_sto_o_fact: 130000000
@@ -179,15 +180,15 @@ vmart_pload_sql: "vmart_parallel_load.sql"
 vmart_code_dir: "/opt/vertica/examples/VMart_Schema/"
 vmart_dest_dir: "/mnt/{{ fb_fs_name }}/vmart/"
 vmart_gen_cmd: >-
-  ./vmart_gen  
-  --files {{ vmart_file_cnt }} --store_sales_fact {{ vmart_sto_s_fact }} 
-  --store_orders_fact {{ vmart_sto_o_fact }} --product_dimension {{ vmart_prod_dim }} 
+  ./vmart_gen
+  --files {{ vmart_file_cnt }} --store_sales_fact {{ vmart_sto_s_fact }}
+  --store_orders_fact {{ vmart_sto_o_fact }} --product_dimension {{ vmart_prod_dim }}
   --store_dimension {{ vmart_stor_dim }} --promotion_dimension {{ vmart_prom_dim }}
-  --vendor_dimension {{ vmart_vend_dim }} --customer_dimension {{ vmart_cust_dim }} 
-  --employee_dimension {{ vmart_empl_dim }} --warehouse_dimension {{ vmart_ware_dim }} 
+  --vendor_dimension {{ vmart_vend_dim }} --customer_dimension {{ vmart_cust_dim }}
+  --employee_dimension {{ vmart_empl_dim }} --warehouse_dimension {{ vmart_ware_dim }}
   --shipping_dimension {{ vmart_ship_dim }} --online_page_dimension {{ vmart_page_dim }}
-  --callcenter_dimension {{ vmart_call_dim }} --online_sales_fact {{ vmart_onl_s_fact }} 
-  --inventory_fact {{ vmart_inv_fact }} --gen_load_script 
+  --callcenter_dimension {{ vmart_call_dim }} --online_sales_fact {{ vmart_onl_s_fact }}
+  --inventory_fact {{ vmart_inv_fact }} --gen_load_script
   --years {{ vmart_years }} --datadirectory {{ vmart_dest_dir }}
   --seed {{ 95603 | random(seed=inventory_hostname) }}
 
