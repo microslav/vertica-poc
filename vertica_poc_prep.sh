@@ -169,6 +169,7 @@ Host vertica-* ${POC_PREFIX}-* ${LAB_PRIV_NET}.* command
    User root
    IdentityFile ${HOME}/.ssh/vertica-poc
    StrictHostKeyChecking no
+   LogLevel ERROR
    UserKnownHostsFile=/dev/null
 
 _EOF_

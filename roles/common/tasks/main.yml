@@ -3,8 +3,8 @@
 # Common configuration steps for all nodes in the Vertica Outposts infra
 #
 # Assumptions:
-#   1. Ansible user is root, and "become" needed for other users. First 
-#      need to enable root access with "sudo vi /root/.ssh/authorized_keys" 
+#   1. Ansible user is root, and "become" needed for other users. First
+#      need to enable root access with "sudo vi /root/.ssh/authorized_keys"
 #      and removing the command blocking login.
 #
 ######################################################################
@@ -158,6 +158,7 @@
         User {{ item.user }}
         IdentityFile ~/.ssh/vertica-poc
         StrictHostKeyChecking no
+        LogLevel ERROR
         UserKnownHostsFile=/dev/null
     dest: "{{ item.home }}/.ssh/config"
     mode: '0600'
@@ -359,7 +360,7 @@
 - debug:
     msg: "{{ results.stdout_lines }}"
 
-- pause: 
+- pause:
     prompt: |
       Check that the last step was successful.
       If everying looks good, hit Ctrl-C,C
