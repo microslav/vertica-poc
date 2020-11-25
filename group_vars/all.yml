@@ -8,7 +8,11 @@
 hosts_group: "{{ lookup('env','POC_ANSIBLE_GROUP') }}"
 
 ### Pause execution at the end of each role
-check_exec: "{{ lookup('env','VA_PAUSE_CHECK') }} | bool"
+check_exec: "{{ lookup('env','VA_PAUSE_CHECK')|bool }}"
+
+### SSH connection info for MC usage hint
+mc_ssh_client: "{{ lookup('env','SSH_CONNECTION').split(' ')[0]}}"
+mc_ssh_here: "{{ lookup('env','SSH_CONNECTION').split(' ')[2]}}"
 
 ### FlashBlade configuration info
 # DNS name or IP address for FlashBlade data and mangement VIPs
@@ -116,7 +120,7 @@ tuned_file: "tuned.conf"
 tuned_config_dir: "/etc/tuned/vertica-performance"
 
 # Vertica v*perf test info
-vperf_runsteps: "{{ lookup('env','VA_RUN_VPERF') }} | bool"
+vperf_runsteps: "{{ lookup('env','VA_RUN_VPERF')|bool }}"
 vperf_dir: "vperf_reports"
 vbin_path: "/opt/vertica/bin"
 vnodes_ips: "{{ groups['vertica_nodes'] | map('extract', hostvars, ['ansible_facts',lookup('env','PRIV_NDEV'),'ipv4','address']) | join(',') }}"
@@ -131,7 +135,7 @@ vdb_shards_per_node: "2"
 nod_list: "{{ groups['vertica_nodes'] | map('extract', hostvars, ['ansible_facts',lookup('env','PRIV_NDEV'),'ipv4','address']) | join(',') }}"
 nod_names: "{{ groups[lookup('vars','hosts_group')] | map('extract', hostvars, ['inventory_hostname_short']) | join(',') }}"
 nod_count: "{{ groups[lookup('vars','hosts_group')] | length }}"
-nod_vms: "{{ lookup('env','VA_VIRTUAL_NODES') | bool }}"
+nod_vms: "{{ lookup('env','VA_VIRTUAL_NODES')|bool }}"
 vertica_cfg_name: "vertica_install.cfg"
 loc_cfg_path: "/tmp/{{ vertica_cfg_name }}"
 nod_cfg_path: "/root/{{ vertica_cfg_name }}"
@@ -159,7 +163,7 @@ vdb_tune_db_cmd: |
   vsql -ec "select set_config_parameter('AWSConnectionPoolSize', 128);"
 
 ### VMart Example Demo Info
-vmart_runsteps: "{{ lookup('env','VA_RUN_VMART') }} | bool"
+vmart_runsteps: "{{ lookup('env','VA_RUN_VMART')|bool }}"
 vmart_file_cnt: 100
 vmart_sto_s_fact: 1300000000
 vmart_sto_o_fact: 130000000

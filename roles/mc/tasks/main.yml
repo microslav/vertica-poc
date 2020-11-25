@@ -3,7 +3,7 @@
 # Configuration steps for Vertica Management Console host
 #
 # Assumptions:
-#   1. Ansible user is root, and "become" needed for other users. 
+#   1. Ansible user is root, and "become" needed for other users.
 #   2. There is only a single node in the group assigned the MC role
 #
 ######################################################################
@@ -37,7 +37,7 @@
   package_facts:
 - name: Verify that the Vertica Management Console package is installed
   debug:
-    msg: "{{ ansible_facts.packages['vertica-console'] | length }} version(s) of Vertica installed"
+    msg: "{{ ansible_facts.packages['vertica-console'] | length }} version(s) of Vertica Management Console installed"
   when: "'vertica-console' in ansible_facts.packages"
 
 - name: Wait and clean up from the frequently broken install
@@ -77,29 +77,32 @@
   service_facts:
 - name: Check vertica-consoled status
   debug:
-    msg: 
+    msg:
       - "Status for the vertica-consoled service --"
       - "{{ ansible_facts.services['vertica-consoled.service'] }}"
       - "If all looks good, point your browser at https://{{ ansible_default_ipv4.address }}:5450/"
+      - ""
+      - "If this host isn't directly accessible, you may need to run this on your laptop --"
+      - "   ssh -f -L 5451:localhost:5451 {{ mc_ssh_client }} ssh -f -L 5451:localhost:5450 -N {{ mc_ssh_here }}"
+      - "then navigate to https://127.0.0.1:5451 on your laptop."
 
 ### This seems to frequently fail. Often there's a stuck Java process for MC. The remediation is to:
 ###   1. Stop the MC service: systemctl stop vertica-consoled
 ###   2. Kill the Java process: kill -9 $(ps aux | grep -F 'vconsole.home=/opt/vconsole' | grep -v grep | awk '{print $2}')
-###   3. Start the MC service again: systemctl start vertica-consoled 
-###   4. Wait a few seconds and check the status: systemctl status vertica-consoled 
+###   3. Start the MC service again: systemctl start vertica-consoled
+###   4. Wait a few seconds and check the status: systemctl status vertica-consoled
 ###   5. Open a browser to https://<vertica-jumpbox>:5450/ and check for MC interface
 ###
 
-### Once MC is up and running, it may be necessary to tunnel the MC port through several hops, 
+### Once MC is up and running, it may be necessary to tunnel the MC port through several hops,
 ### especially if the subnet isn't directly accessible from your laptop. Use a command
 ### similar to this one to set up the tunnels:
 ###   ssh -f -L 5451:localhost:5451 My_Jumpbox ssh -f -L 5451:localhost:5450 -N My_MC_Node
 
-- pause: 
+- pause:
     prompt: |
       Check that the last step was successful.
       If everying looks good, hit Ctrl-C,C
   when: check_exec
 
 ...
-

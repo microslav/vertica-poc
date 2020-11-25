@@ -1,0 +1,19 @@
+### TPC-DS Configuration Info
+tpcds_dir: "tpcds"
+tpcds_dist_src: "{{ playbook_dir}}/roles/primary-node/files/tpcds_dist.tgz"
+tpcds_nodes: "{{ groups['vertica_nodes'] | map('extract', hostvars, ['ansible_facts',lookup('env','PRIV_NDEV'),'ipv4','address']) | join('\n') }}"
+tpcds_dist_dest: "/home/{{ dbuser }}/{{ tpcds_dir }}/"
+tpcds_config_desc: >-
+  "{{ ansible_processor[2] }},"
+  "{{ ansible_processor_cores }}x{{ ansible_processor_threads_per_core }} Threads,"
+  "{{ ansible_memtotal_mb }}MB RAM"
+tpcds_config_Path: "/{{ tpcds_dir }}/{{ tpcds_config_size }}"
+tpcds_config_dPath: "{{ tpcds_config_Path }}/tpcds-source"
+tpcds_config_qPath: "{{ tpcds_config_Path }}/tpcds-queries"
+tpcds_config_size: "1000"
+tpcds_config_users: "1 2 4"
+tpcds_config_reps: "1"
+tpcds_config_lThrd: '$(( $(grep -c ^processor /proc/cpuinfo) - 2 ))'
+tpcds_config_noMH: "0"
+tpcds_config_Folder: "$HOME/tpcds_vertica"
+tpcds_config_numLds: '$(( $(grep -c ^processor /proc/cpuinfo) / 2 ))'

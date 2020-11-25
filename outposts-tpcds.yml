@@ -1,0 +1,122 @@
+######################################################################
+#
+# Set up and run TPC-DS for Vertica database nodes on Outposts
+#
+# Assumptions:
+#   1. Ansible user is root, and "become" needed for other users.
+#
+######################################################################
+---
+- name: Set up and run TPC-DS for Vertica database nodes on Outposts
+  hosts: vertica_nodes
+  collections:
+    - purestorage.flashblade
+  gather_facts: yes
+  vars_files:
+    - "{{ playbook_dir }}/group_vars/all.yml"
+    - "{{ playbook_dir }}/group_vars/tpcds.yml"
+  tasks:
+    - name: Create the shared mount point directory
+      file:
+        path: "/mnt/{{ fb_fs_name }}"
+        state: directory
+        owner: "{{ dbuser }}"
+        group: "{{ dbgroup }}"
+        mode: '0777'
+
+    - name: Mount {{ fb_data }}:/{{ fb_fs_name }} filesystem at {{ fs_path }} for user {{ dest_user }}
+      mount:
+        fstype: nfs
+        path: "/mnt/{{ fb_fs_name }}"
+        src: "{{ fb_data }}:/{{ fb_fs_name }}"
+        state: mounted
+
+    - name: Create the per-node data directories under the shared mount point
+      file:
+        path: "/mnt/{{ fb_fs_name }}/{{ tpcds_dir }}/{{ inventory_hostname_short }}"
+        state: directory
+        owner: "{{ dbuser }}"
+        group: "{{ dbgroup }}"
+        mode: '0777'
+
+    - name: Create the per-node data directories on each node where TPC-DS expects them
+      file:
+        path: "/{{ tpcds_dir }}"
+        state: directory
+        owner: "{{ dbuser }}"
+        group: "{{ dbgroup }}"
+        mode: '0777'
+
+    - name: Mount the per-node data directories on each node where TPC-DS expects them
+      mount:
+        fstype: nfs
+        path: "/{{ tpcds_dir }}"
+        src: "{{ fb_data }}:/{{ fb_fs_name }}/{{ tpcds_dir }}/{{ inventory_hostname_short }}"
+        state: mounted
+
+    - name: Create the Scale {{ tpcds_config_Path }} data directories on each node where TPC-DS expects them
+      file:
+        path: "/{{ tpcds_config_Path }}"
+        state: directory
+        owner: "{{ dbuser }}"
+        group: "{{ dbgroup }}"
+        mode: '0777'
+
+    - name: Create the {{ tpcds_dist_dest }} destination directory for the TPC-DS distribution on {{ hosts_group }}[0]
+      file:
+        path: "{{ tpcds_dist_dest }}"
+        state: directory
+        owner: "{{ dbuser }}"
+        group: "{{ dbgroup }}"
+        mode: '0755'
+      run_once: yes
+
+    - name: Extract the TPC-DS distribution on {{ hosts_group }}[0] in {{ tpcds_dist_dest }}
+      unarchive:
+        src: "{{ tpcds_dist_src }}"
+        dest: "{{ tpcds_dist_dest }}"
+        creates: "{{ tpcds_dist_dest }}/.unarchived_by_ansible"
+        owner: "{{ dbuser }}"
+        group: "{{ dbgroup }}"
+      run_once: yes
+
+    - name: Populate the list of nodes on {{ hosts_group }}[0] at {{ tpcds_dist_dest }}/tpc_ds/vertica/nodes.txt
+      copy:
+        content: |
+          {{ tpcds_nodes }}
+        dest: "{{ tpcds_dist_dest }}/tpc_ds/vertica/nodes.txt"
+        mode: "644"
+        owner: "{{ dbuser }}"
+        group: "{{ dbgroup }}"
+      run_once: yes
+
+    - name: Populate the configuration settings file on {{ hosts_group }}[0] at {{ tpcds_dist_dest }}/tpc_ds/vertica/config_settings.sh
+      copy:
+        content: |
+          # Brief description of the test; Don't user " or | characters"
+          description="{{ tpcds_config_desc }}"
+          # Folder to store the generated data
+          dataPath="{{ tpcds_config_dPath }}"
+          # Folder to store the generated queries
+          queriesPath="{{  tpcds_config_qPath }}"
+          # Number of GB to be generated
+          size={{ tpcds_config_size }}
+          # Number of users for the test (e.g., "1 2 4 8 16")
+          users="{{ tpcds_config_users }}"
+          # Number of times to repeat each query for consistency
+          repetitions={{ tpcds_config_reps }}
+          # Number of processes per host to generate data.
+          loadThreads="{{ tpcds_config_lThrd }}"
+          # Set disable_multi_host to 1 for validation runs
+          disable_multi_host={{ tpcds_config_noMH }}
+          # Path to copy the tests scripts and TPC-DS folder
+          tpcdsFolder="{{ tpcds_config_Folder }}"
+          # Number of concurrent loads per node
+          concurrentLoads="{{ tpcds_config_numLds }}"
+        dest: "{{ tpcds_dist_dest }}/tpc_ds/vertica/config_settings.sh"
+        mode: "644"
+        owner: "{{ dbuser }}"
+        group: "{{ dbgroup }}"
+      run_once: yes
+
+...
