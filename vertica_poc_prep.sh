@@ -21,29 +21,31 @@ set -x
 
 ### PoC General Settings
 export POC_ANSIBLE_GROUP="vertica"              # Ansible Vertica nodes host group
-export POC_PREFIX="fsa"                         # Short name for this POC
-export KEYNAME="fsa-vertica-keys"               # Name of SSH key (without suffix)
+export POC_PREFIX="outpost-test"                # Short name for this POC
+export KEYNAME="miroslav-pstg-outpost-keys"     # Name of SSH key (without suffix)
 export LAB_DOM="vertica.lab"                    # Internal domain created for PoC
-export POC_DOM="fsa.lab"                        # External domain where PoC runs
-export POC_DNS="10.21.234.10"                   # External DNS IP where PoC runs
+export POC_DOM="us-west-1.compute.internal"     # External domain where PoC runs
+export POC_DNS="172.26.0.2"                     # External DNS IP where PoC runs
 export POC_TZ="America/Los_Angeles"             # Timezone where PoC runs
 
 ### FlashBlade API Token (get via SSH to FlashBlade CLI; see Admin docs)
-export PUREFB_API="T-11111111-2222-3333-4444-555555555555"   # <== CHANGE ME
+export PUREFB_API="T-eb899aeb-fa43-4d78-8ecc-a97bd3fde56c"
 
 ### PoC Platform Devices and Roles
 # True is the hosts are virtual machines or instances, False for physical hosts
 export VA_VIRTUAL_NODES="True"
 # If collapsing multiple networks (e.g., public and private, private and storage),
 # repeat the name of the device in multiple places:
-export PRIV_NDEV="ens192"      # Private (primary) network interface
-export PUBL_NDEV="ens224"      # Public network interface for access and NAT
-export DATA_NDEV="ens224"      # Data network interface for storage access
+export PRIV_NDEV="eth0"      # Private (primary) network interface
+export PUBL_NDEV="eth0"      # Public network interface for access and NAT
+export DATA_NDEV="eth0"      # Data network interface for storage access
 # URL for the extras repository matching host OS distributions
 export EXTRAS_URI="https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm"
 # Depot size per node. This should be about 2x host memory, but not more than
 # 60-80% of the host's /home partion size. Use {K|M|G|T} suffix for size.
-export VDB_DEPOT_SIZE="32G"
+export VDB_DEPOT_SIZE="512G"
+# Name of non-root user for the OS (e.g., dbadmin for Vertica AMI, ec2-user for AWS Linux AMI)
+export OS_USERNAME="ec2-user"
 
 ### Internal gateway IP address suffix on private network. It's assigned to
 ### the Command host as a NAT gateway to the outside for other PoC hosts.
@@ -54,50 +56,44 @@ export LAB_IP_SUFFIX="1"
 
 ### Set IP addresses for the Vertica nodes and FlashBlade
 read -r -d '' PRIMARY_HOST_ENTRIES <<-_EOF_
-192.168.1.3 ${POC_PREFIX}-01 vertica-node001
-192.168.1.4 ${POC_PREFIX}-02 vertica-node002
-192.168.1.5 ${POC_PREFIX}-03 vertica-node003
+172.26.1.232 ${POC_PREFIX}-01 vertica-node001
+172.26.1.32  ${POC_PREFIX}-02 vertica-node002
+172.26.1.227 ${POC_PREFIX}-03 vertica-node003
 _EOF_
 read -r -d '' SECONDARY_HOST_ENTRIES <<-_EOF_
-192.168.1.6 ${POC_PREFIX}-04 vertica-node004
-192.168.1.7 ${POC_PREFIX}-05 vertica-node005
-192.168.1.8 ${POC_PREFIX}-06 vertica-node006
 _EOF_
 read -r -d '' STORAGE_ENTRIES <<-_EOF_
-10.21.200.5 ${POC_PREFIX}-fb-mgmt poc-fb-mgmt
-10.21.200.4 ${POC_PREFIX}-fb-data poc-fb-data
+10.21.239.11  ${POC_PREFIX}-fb-mgmt poc-fb-mgmt
+10.21.241.148 ${POC_PREFIX}-fb-data poc-fb-data
 _EOF_
 
 ### Configure how and what to run in the playbook
 export VA_RUN_VPERF="yes"
 export VA_RUN_VMART="yes"
-export VA_PAUSE_CHECK="no"
+export VA_PAUSE_CHECK="yes"
 
 ######################################################################
 ### CODE BELOW SHOULD NOT NEED TO BE MODIFIED
 ######################################################################
 
-### Helper Functions
-# Return the first IP address associated with an interface
-function dev_ip()
-{
-    local myIP=$(nmcli dev show $1 | grep -F 'IP4.ADDRESS[1]:' | awk '{print $NF}' | cut -d/ -f1)
-    echo "$myIP"
-}
+### Platform
+export IS_AWS_UUID="$(sudo dmidecode --string=system-uuid | cut -c1-3)"
+export PRETTY_NAME="$(grep PRETTY_NAME= /etc/os-release | cut -d\" -f2)"
+export AZL2_NAME="Amazon Linux 2"
 
-# Return the CIDR associated with an interface
-function dev_cidr()
-{
-    local myCIDR=$(nmcli dev show $1 | grep -F 'IP4.ADDRESS[1]:' | awk '{print $NF}')
-    echo "$myCIDR"
-}
-
-# Return the connection name associated with an interface
-function dev_conn()
-{
-    local myCONN=$(nmcli dev show $1 | grep -F 'GENERAL.CONNECTION:' | awk '{print $NF}')
-    echo "$myCONN"
-}
+### Helper Functions: 
+# dev_ip() -- Return the first IP address associated with an interface
+# dev_cidr() -- Return the CIDR associated with an interface
+# dev_conn() -- Return the connection name associated with an interface
+if [ "$PRETTY_NAME" == "$AZL2_NAME" ]; then
+    function dev_ip()   { local myIP=$(ip addr show dev $1 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1); echo "$myIP"; }
+    function dev_cidr() { local myCIDR=$(ip addr show dev $1 | grep 'inet ' | awk '{print $2}'); echo "$myCIDR"; }
+    function dev_conn() { local myCONN=$1; echo "$myCONN"; }
+else    
+    function dev_ip()   { local myIP=$(nmcli dev show $1 | grep -F 'IP4.ADDRESS[1]:' | awk '{print $NF}' | cut -d/ -f1); echo "$myIP"; }
+    function dev_cidr() { local myCIDR=$(nmcli dev show $1 | grep -F 'IP4.ADDRESS[1]:' | awk '{print $NF}'); echo "$myCIDR"; }
+    function dev_conn() { local myCONN=$(nmcli dev show $1 | grep -F 'GENERAL.CONNECTION:' | awk '{print $NF}'); echo "$myCONN"; }
+fi
 
 ### Network Connection information
 export PRIV_IP=$(dev_ip "$PRIV_NDEV")
@@ -111,12 +107,9 @@ export PUBL_CONN=$(dev_conn "$PUBL_NDEV")
 export DATA_CONN=$(dev_conn "$DATA_NDEV")
 export PRIV_PREFIX=$(echo $PRIV_CIDR | cut -d/ -f2)
 
-### Platform
-export IS_AWS_UUID="$(sudo dmidecode --string=system-uuid | cut -c1-3)"
-
 ### Initial packages to install before Ansible configured
 export INITPKG="python-pip ansible"
-export DNSPKG="dnsmasq bind-utils"
+export DNSPKG="dnsmasq bind-utils ntp"
 
 ### For dnsmasq setup
 export HOSTNAME_ORIG=$(hostname)
@@ -130,13 +123,18 @@ export LAB_RDNS_DATA="$(echo $LAB_DATA_NET | awk -F. '{print $3 "." $2 "." $1}')
 export LAB_DNS_IP="${PRIV_IP}"
 export LAB_GW="${LAB_PRIV_NET}.${LAB_IP_SUFFIX}"
 
-# Name of Vertica non-root user (Should not be changed, but parameterized for testing)
-export DBUSER="dbadmin"
-
 ### Install some basic packages
-yum install -y epel-release
-yum install -y dnf deltarpm
-dnf install -y $INITPKG
+if [ "$PRETTY_NAME" == "$AZL2_NAME" ]; then
+    # AZ Linux 2 doesn't have firewalld or NetworkManager/nmcli
+    yum install -y ${EXTRAS_URI}
+    alias dnf=yum
+    yum install -y deltarpm
+    yum install -y firewalld && systemctl start firewalld && systemctl enable firewalld
+else
+    yum install -y epel-release
+    yum install -y dnf deltarpm
+fi
+dnf install -y ${INITPKG}
 
 ### Use pip to install Ansible to get newer version than EPEL
 pip install --upgrade pip
@@ -146,7 +144,7 @@ pip install --upgrade ansible
 
 ### Set up SSH keys for login and Ansible
 export PUBPATH="${HOME}/.ssh/${KEYNAME}.pub"
-if [ ${IS_AWS_UUID^^} == "EC2" ]; then
+if [ "${IS_AWS_UUID^^}" == "EC2" ]; then
     # If AWS, then check that the key(s) have been uploaded and given expected name(s)
     export KEYPATH="${HOME}/.ssh/${KEYNAME}.pem"
     [[ -f "${KEYPATH}" ]] || { echo "!!! ERROR: Please upload the private SSH key to ${KEYPATH} !!!"; exit 1; }
@@ -291,18 +289,29 @@ systemctl restart dnsmasq
 systemctl status dnsmasq
 
 ### Use this (Command) server to resolve names
-if [ "${PRIV_CONN}" != "${PUBL_NDEV}" ]; then
-    nmcli connection modify ${PRIV_CONN} ipv4.ignore-auto-dns yes
-    nmcli connection modify ${PRIV_CONN} ipv4.dns ${LAB_DNS_IP}
-    nmcli connection modify ${PRIV_CONN} ipv4.dns-search ${LAB_DOM}
-    nohup bash -c "nmcli connection down ${PRIV_CONN} && nmcli connection up ${PRIV_CONN}"
+cat <<_EOF_ > /tmp/ifcfg_delta
+DOMAIN=${LAB_DOM}
+DNS1=${LAB_DNS_IP}
+_EOF_
+if [ "${PRETTY_NAME}" == "${AZL2_NAME}" ]; then
+    # Amazon Linux doesn't use NetworkManager and nmcli
+    cat /tmp/ifcfg_delta >> /etc/sysconfig/network-scripts/ifcfg-${PRIV_NDEV}
+    cp /etc/resolv.conf /etc/resolv.ORIG
+    systemctl restart network
+else
+    if [ "${PRIV_CONN}" != "${PUBL_NDEV}" ]; then
+	nmcli connection modify ${PRIV_CONN} ipv4.ignore-auto-dns yes
+	nmcli connection modify ${PRIV_CONN} ipv4.dns ${LAB_DNS_IP}
+	nmcli connection modify ${PRIV_CONN} ipv4.dns-search ${LAB_DOM}
+	nohup bash -c "nmcli connection down ${PRIV_CONN} && nmcli connection up ${PRIV_CONN}"
+	sleep 1
+    fi
+    nmcli connection modify ${PUBL_CONN} ipv4.ignore-auto-dns yes
+    nmcli connection modify ${PUBL_CONN} ipv4.dns ${LAB_DNS_IP}
+    nmcli connection modify ${PUBL_CONN} ipv4.dns-search ${LAB_DOM}
+    nohup bash -c "nmcli connection down ${PUBL_CONN} && nmcli connection up ${PUBL_CONN}"
     sleep 1
 fi
-nmcli connection modify ${PUBL_CONN} ipv4.ignore-auto-dns yes
-nmcli connection modify ${PUBL_CONN} ipv4.dns ${LAB_DNS_IP}
-nmcli connection modify ${PUBL_CONN} ipv4.dns-search ${LAB_DOM}
-nohup bash -c "nmcli connection down ${PUBL_CONN} && nmcli connection up ${PUBL_CONN}"
-sleep 1
 
 ### Change hostname to match /etc/hosts
 [[ "$(hostname)" == "${HOSTNAME_C3}" ]] || hostnamectl set-hostname ${HOSTNAME_C3}
@@ -356,7 +365,7 @@ echo "(say 'yes' if prompted and enter password repeatedly)"
 for node in ${NODES}
 do
     if [ ${IS_AWS_UUID^^} == "EC2" ]; then
-	ssh -i $KEYPATH ${DBUSER}@${node} sudo cp /home/${DBUSER}/.ssh/authorized_keys /root/.ssh/authorized_keys
+	ssh -i $KEYPATH ${OS_USERNAME}@${node} "sudo cp /home/${OS_USERNAME}/.ssh/authorized_keys /root/.ssh/authorized_keys"
     else
 	ssh-copy-id -i $KEYPATH root@${node}
     fi
@@ -370,10 +379,17 @@ ansible all -o -m ping
 # Rename the hosts to match /etc/hosts and Ansible inventory
 ansible vertica_nodes -o -m hostname -a "name={{ inventory_hostname_short }}"
 # Install packages we'll need later
-ansible vertica_nodes -m package -a 'name=bind-utils,ntp,traceroute state=present'
+ansible vertica_nodes -m package -a 'name=bind-utils,ntp,traceroute,firewalld state=present'
 # Add dnsmasq DNS to the private interface (and public interface if they're the same)
-ansible vertica_nodes -o -m nmcli \
-    -a "type=ethernet conn_name=${PRIV_NDEV} gw4=${LAB_GW} dns4=${LAB_DNS_IP} dns4_search=${LAB_DOM} state=present"
+if [ "${PRETTY_NAME}" == "${AZL2_NAME}" ]; then
+    # Amazon Linux doesn't use NetworkManager and nmcli
+    ansible vertica_nodes -o -m copy  -a "src=/tmp/ifcfg_delta dest=/tmp/ifcfg_delta"
+    ansible vertica_nodes -o -m shell -a "cat /tmp/ifcfg_delta >> /etc/sysconfig/network-scripts/ifcfg-${PRIV_NDEV}"
+    ansible vertica_nodes -o -m shell -a "cp /etc/resolv.conf /etc/resolv.ORIG"
+else
+    ansible vertica_nodes -o -m nmcli \
+	    -a "type=ethernet conn_name=${PRIV_NDEV} gw4=${LAB_GW} dns4=${LAB_DNS_IP} dns4_search=${LAB_DOM} state=present"
+fi
 # Network changes if private and public interfaces are separate devices
 if [ "${PRIV_NDEV}" != "${PUBL_NDEV}" ]; then
     # Set the private interface to be on the trusted zone for the firewall
