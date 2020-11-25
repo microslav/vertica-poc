@@ -29,7 +29,7 @@ export POC_DNS="172.26.0.2"                     # External DNS IP where PoC runs
 export POC_TZ="America/Los_Angeles"             # Timezone where PoC runs
 
 ### FlashBlade API Token (get via SSH to FlashBlade CLI; see Admin docs)
-export PUREFB_API="T-eb899aeb-fa43-4d78-8ecc-a97bd3fde56c"
+export PUREFB_API="T-eb899aeb-fa43-4d78-8ecc-deadbeefcafe"
 
 ### PoC Platform Devices and Roles
 # True is the hosts are virtual machines or instances, False for physical hosts
@@ -81,7 +81,7 @@ export IS_AWS_UUID="$(sudo dmidecode --string=system-uuid | cut -c1-3)"
 export PRETTY_NAME="$(grep PRETTY_NAME= /etc/os-release | cut -d\" -f2)"
 export AZL2_NAME="Amazon Linux 2"
 
-### Helper Functions: 
+### Helper Functions:
 # dev_ip() -- Return the first IP address associated with an interface
 # dev_cidr() -- Return the CIDR associated with an interface
 # dev_conn() -- Return the connection name associated with an interface
@@ -89,7 +89,7 @@ if [ "$PRETTY_NAME" == "$AZL2_NAME" ]; then
     function dev_ip()   { local myIP=$(ip addr show dev $1 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1); echo "$myIP"; }
     function dev_cidr() { local myCIDR=$(ip addr show dev $1 | grep 'inet ' | awk '{print $2}'); echo "$myCIDR"; }
     function dev_conn() { local myCONN=$1; echo "$myCONN"; }
-else    
+else
     function dev_ip()   { local myIP=$(nmcli dev show $1 | grep -F 'IP4.ADDRESS[1]:' | awk '{print $NF}' | cut -d/ -f1); echo "$myIP"; }
     function dev_cidr() { local myCIDR=$(nmcli dev show $1 | grep -F 'IP4.ADDRESS[1]:' | awk '{print $NF}'); echo "$myCIDR"; }
     function dev_conn() { local myCONN=$(nmcli dev show $1 | grep -F 'GENERAL.CONNECTION:' | awk '{print $NF}'); echo "$myCONN"; }
