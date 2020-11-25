@@ -166,10 +166,20 @@
 - name: Check that Huge Pages set to Always
   shell:
     cmd: cat /sys/kernel/mm/transparent_hugepage/enabled
-  register: out
-  failed_when: "'[always]' not in out.stdout_lines[0]"
+  register: pages_result
 - debug:
-    msg: "{{ out.stdout_lines }}"
+    msg: "{{ pages_result.stdout_lines[0] }}"
+- name: If not enabled, modify to Always enable Huge Pages
+  shell:
+    cmd: |
+      sysctl -w vm.nr_hugepages=2048
+      echo "vm.nr_hugepages=2048" >> /etc/sysctl.conf
+      sysctl -p
+      echo "echo 'echo always > /sys/kernel/mm/transparent_hugepage/enabled'" >> etc/rc.local
+      cat /sys/kernel/mm/transparent_hugepage/enabled
+  when: "'[always]' not in pages_result.stdout_lines[0]"
+  register: out
+- debug: var=out
 
 # Install the Vertica RPM on all the Vertica nodes
 # Ensure that the Vertica RPM is copied into the files directory for the role
