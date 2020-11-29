@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 if [[ "$(basename -- "$0")" == "vertica_poc_prep.sh" ]]; then
     echo "Don't run $0, source it in a console window" >&2
     exit 1
@@ -21,7 +23,7 @@ set -x
 
 ### PoC General Settings
 export POC_ANSIBLE_GROUP="vertica"              # Ansible Vertica nodes host group
-export POC_PREFIX="outpost-test"                # Short name for this POC
+export POC_PREFIX="outpost"                     # Short name for this POC
 export KEYNAME="miroslav-pstg-outpost-keys"     # Name of SSH key (without suffix)
 export LAB_DOM="vertica.lab"                    # Internal domain created for PoC
 export POC_DOM="puretec.purestorage.com"        # External domain where PoC runs
@@ -29,10 +31,10 @@ export POC_DNS="10.21.93.16"                    # External DNS IP where PoC runs
 export POC_TZ="America/Los_Angeles"             # Timezone where PoC runs
 
 ### FlashBlade API Token (get via SSH to FlashBlade CLI; see Admin docs)
-export PUREFB_API="T-eb899aeb-fa43-4d78-8ecc-deadbeefcafe"
+export PUREFB_API="T-deadbeef-f00d-cafe-feed-1337c0ffee"
 
 ### PoC Platform Devices and Roles
-# True is the hosts are virtual machines or instances, False for physical hosts
+# True if the hosts are virtual machines or instances, False for physical hosts
 export VA_VIRTUAL_NODES="True"
 # If collapsing multiple networks (e.g., public and private, private and storage),
 # repeat the name of the device in multiple places:
@@ -63,10 +65,13 @@ read -r -d '' PRIMARY_HOST_ENTRIES <<-_EOF_
 172.26.1.227 ${POC_PREFIX}-03 vertica-node003
 _EOF_
 read -r -d '' SECONDARY_HOST_ENTRIES <<-_EOF_
+172.26.1.207 ${POC_PREFIX}-04 vertica-node004
+172.26.1.208 ${POC_PREFIX}-05 vertica-node005
+172.26.1.209 ${POC_PREFIX}-06 vertica-node006
 _EOF_
 read -r -d '' STORAGE_ENTRIES <<-_EOF_
-10.21.239.11  ${POC_PREFIX}-fb-mgmt poc-fb-mgmt
-10.21.241.148 ${POC_PREFIX}-fb-data poc-fb-data
+10.21.241.148 ${POC_PREFIX}-fb-mgmt poc-fb-mgmt
+10.21.239.11  ${POC_PREFIX}-fb-data poc-fb-data
 _EOF_
 
 ### Configure how and what to run in the playbook

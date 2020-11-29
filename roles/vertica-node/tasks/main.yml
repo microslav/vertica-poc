@@ -89,30 +89,33 @@
   register: out
 - debug: var=out
 
-# Install the Pure Storage RapidFile Toolkit on the nodes for any ETL data wrangling
+# Optionally install the Pure Storage RapidFile Toolkit on the nodes for any ETL data wrangling
 # Ensure that the RapidFile Toolkit RPM is copied into the files directory for the role
 - name: Copy RFT package to hosts
   copy:
     src: "{{ rft_pkg }}"
     dest: "/tmp/"
     mode: "0644"
-  register: out
-  ignore_errors: no
-- debug: var=out
-- name: Install the package on the host
-  package:
-    name: "/tmp/{{ rft_pkg }}"
-    state: present
-  register: out
-  ignore_errors: no
-- debug:
-    msg: "{{ out.results }}"
-- name: Gather package facts
-  package_facts:
-- name: Verify that the package is installed
-  debug:
-    msg: "{{ ansible_facts.packages['rapidfile'] | length }} version(s) of RapidFile Toolkit installed"
-  when: "'rapidfile' in ansible_facts.packages"
+  register: rft_copy
+  ignore_errors: yes
+- debug: var=rft_copy
+- name: Install RapidFile Toolkit
+  block:
+    - name: Install the RPM package on the host
+      package:
+        name: "/tmp/{{ rft_pkg }}"
+        state: present
+      register: out
+      ignore_errors: no
+    - debug:
+        msg: "{{ out.results }}"
+    - name: Gather package facts
+      package_facts:
+    - name: Verify that the package is installed
+      debug:
+        msg: "{{ ansible_facts.packages['rapidfile'] | length }} version(s) of RapidFile Toolkit installed"
+      when: "'rapidfile' in ansible_facts.packages"
+  when: rft_copy is succeeded
 
 - name: Disable SE Linux
   shell:
