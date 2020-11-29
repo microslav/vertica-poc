@@ -119,4 +119,9 @@
         group: "{{ dbgroup }}"
       run_once: yes
 
+### This will set up all the code to run TPC-DS in stages. You'll need to login to vertica-node001 and go to
+### the /home/dbadmin/tpcds/tpc_ds/vertica/ directory, and then run the scripts in three steps:
+###  1. Generate the data
+###  2. Load the data
+###  3. Run the queries
 ...
