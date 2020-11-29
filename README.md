@@ -124,18 +124,18 @@ The following variables help customize the script for the PoC platform, hosts, a
 The following section in the script is used to define the IP addresses for the environment:
 ```shell
 read -r -d '' PRIMARY_HOST_ENTRIES <<-_EOF_
-172.26.1.232 ${POC_PREFIX}-01 vertica-node001
-172.26.1.32  ${POC_PREFIX}-02 vertica-node002
-172.26.1.227 ${POC_PREFIX}-03 vertica-node003
+172.26.1.101 ${POC_PREFIX}-01 vertica-node001
+172.26.1.102 ${POC_PREFIX}-02 vertica-node002
+172.26.1.103 ${POC_PREFIX}-03 vertica-node003
 _EOF_
 read -r -d '' SECONDARY_HOST_ENTRIES <<-_EOF_
-172.26.1.207 ${POC_PREFIX}-04 vertica-node004
-172.26.1.208 ${POC_PREFIX}-05 vertica-node005
-172.26.1.209 ${POC_PREFIX}-06 vertica-node006
+172.26.1.201 ${POC_PREFIX}-04 vertica-node004
+172.26.1.202 ${POC_PREFIX}-05 vertica-node005
+172.26.1.203 ${POC_PREFIX}-06 vertica-node006
 _EOF_
 read -r -d '' STORAGE_ENTRIES <<-_EOF_
-10.21.239.11  ${POC_PREFIX}-fb-mgmt poc-fb-mgmt
-10.21.241.148 ${POC_PREFIX}-fb-data poc-fb-data
+10.99.100.100  ${POC_PREFIX}-fb-mgmt poc-fb-mgmt
+10.99.101.100 ${POC_PREFIX}-fb-data poc-fb-data
 _EOF_
 ```
 Edit the IP addresses associated with the entries within the script. Some things to keep in mind:
