@@ -71,10 +71,10 @@ Host outposts-*
 
 ```
 
-## Edit the `vertica_poc_prep.sh` File
+# Edit the `vertica_poc_prep.sh` File
 This is the main script that aims to automate all the PoC environment customization and sets up the MC instance to act as the central point of management for the PoC. You need to make edits to the various variables at the top of the script, and then source the script into your shell environment. The Ansible playbooks do the rest, and they need to look up some of the environment variables set during the script run.
 
-### Edit General Settings
+## Edit General Settings
 First, edit general settings for the overall environment:
 
 -   **POC_ANSIBLE_GROUP**="vertica" – The Ansible Vertica nodes host group defined in the Ansible hosts file. Shouldn't need to be changed.
@@ -85,7 +85,7 @@ First, edit general settings for the overall environment:
 -   **POC_DNS**="123.123.123.123" - External DNS server IP address for the where PoC is set up. For AWS Outposts, use the primary DNS server for the local network where the Outpost is installed.
 -   **POC_TZ**="America/Los_Angeles" – Local timezone where PoC runs. This will be set on all the hosts and reflected in the timestamps, logs, etc.
 
-### Set the FlashBlade API Token
+## Set the FlashBlade API Token
 The Ansible playbook will configure the FlashBlade to be used for the PoC. It will create:
 
 1.  NFS filesystem used for hosting test data before it's loaded into Vertica (`vertica`)
@@ -106,7 +106,7 @@ Once you obtain a copy of the token, set instead of the placeholder in the PoC p
 -   **PUREFB_API**="T-deadbeef-f00d-cafe-feed-1337c0ffee"
 
 
-### Set the PoC Platform Devices and Role Info
+## Set the PoC Platform Devices and Role Info
 The following variables help customize the script for the PoC platform, hosts, and roles used during the PoC:
 
 -   **VA_VIRTUAL_NODES**="True" - True if the hosts are virtual machines or instances, set to "False" for physical hosts (although won't hurt to keep it as "True" for smaller PoC environments). Used to configure the Spread network for Vertica.
@@ -120,7 +120,7 @@ The following variables help customize the script for the PoC platform, hosts, a
 -   **DBUSER**="dbadmin" - Name of the Vertica database management user. Shouldn't need to be changed.
 -   **LAB_IP_SUFFIX**="1" - The internal gateway IP address suffix on the private network. It's assigned to the MC host as a NAT gateway to the outside for other PoC hosts. If there is no separate private network, use the existing gateway suffix for the public network. Warning: this assumes a /24 network and the code might need to adjusted for wider networks.
 
-### Set the IP Addresses for the Nodes and FlashBlade
+## Set the IP Addresses for the Nodes and FlashBlade
 The following section in the script is used to define the IP addresses for the environment:
 ```shell
 read -r -d '' PRIMARY_HOST_ENTRIES <<-_EOF_
@@ -144,3 +144,70 @@ Edit the IP addresses associated with the entries within the script. Some things
 -   The Secondary host section can be empty if you don't have any secondary hosts.
 -   Any hosts in the Secondary section are configured as Standby nodes. These can be used to demonstrate things like cluster expansion, creating subclusters, etc.
 -   You need to define both a Management and Data VIP on the FlashBlade that are accessible to the PoC environment and include the IP addresses here. You can also (optionally) list multiple accessible Data VIPs in the file using the same host names, and these will be served by the `dnsmasq` server via Round-Robin DNS during the PoC. Multiple Data VIPs are unlikely to result in performance gains during the PoC, but are a possible configuration option.
+
+## Set Playbook Execution Options
+The playbook is set up with a few options to control the flow of execution:
+-   **VA_RUN_VPERF**="yes" - The playbook is set up to run the [Vertica Validation Scripts][7a3cfca5] to measure CPU, network, and IO performance. These add about 10-12 minutes to the playbook runtime. If you'd rather skip those tests, change this variable to "no".
+-   **VA_RUN_VMART**="yes" - The playbook is set up to run the [Vertica VMart Example Database][7de0a199]. It will generate the test data, load the data into the database, and then run queries against the data from all the nodes. The data loading has been parallelized (using `ON ANY NODE` syntax), but the data generation is single-threaded and happens on only a single node. Running these tasks is a great way to ensure everything is working, but adds about 60 minutes to the overall runtime. If you just want to set things up and skip the test, change this to "no".
+-   **VA_PAUSE_CHECK**="yes" - To provide more control and potential to catch errors, the playbook will pause after each role completes its tasks. When paused, hit Ctrl-C, then either "C" to continue, or "A" to abort. If you abort (or a play fails), you can resume the play at the next incomplete section by commenting out whichever roles completed successfully in the `site.yml` file. Change this to "no" if you would like all the roles and tasks to be run in a single pass.
+
+    [7a3cfca5]: https://www.vertica.com/docs/latest/HTML/Content/Authoring/InstallationGuide/scripts/ValidationScripts.htm "Vertica Validation Scripts"
+    [7de0a199]: https://www.vertica.com/docs/latest/HTML/Content/Authoring/GettingStartedGuide/IntroducingVMart/IntroducingVMart.htm "Vertica VMart Example Database"
+
+# Run the Playbook
+Once everything has been prepared, the hard part should be over. There are now three main steps to configuring getting a working Vertica PoC running (each covered in more detail below):
+1.   Source the `vertica_poc_prep.sh` script
+2.   Run the Ansible Playbook
+3.   Configure access to the Vertica Management Console GUI
+
+As a best practice, set aside a window (terminal tab, `tmux` window, etc.) for just running the scripts and playbook. This session will have all the right environment variables set by the prep script. Use other windows to edit anything, log into the other nodes, etc. Try to protect this window and not close it until the playbook completes successfully.
+
+## Source the Prep Script
+To get everything set up on the MC host, log in and `source` the `vertica_poc_prep.sh` file (don't run as a script):
+```shell
+cd ~/vertica-poc/
+source vertica_poc_prep.sh
+```
+
+You'll see a bunch of messages generated on the terminal as various phases of the setup run. The script does the following:
+1.   Defines a bunch of environment variables that will be used by the script and Ansible playbooks
+2.   Installs some basic packages needed by the script, including a recent version of Ansible via Python `pip`. (The 2.10 version of Ansible is needed by the FlashBlade Ansible Galaxy collection, and earlier versions of Ansible don't seem to work as reliably.)
+3.   Sets up SSH keys and config file to use for Ansible and other management tasks
+4.   Sets up `firewalld` and configures it for management access and DNS. If the private interface is different from the public one, it also configures the MC host as a NAT gateway to the public network.
+5.   Sets up DNS service with `dnsmasq` to provide address translation to the PoC hosts. This simplifies things and also helps when the hosts are on an isolated private network.
+6.   Modifies hostnames to correspond to what's configured.
+7.   Installs the `purestorage.flashblade` collection from Ansible Galaxy.
+8.   Defines the Ansible hosts and makes some changes to the Ansible defaults.
+9.   Adjusts the SSH keys to allow root login.
+10.  Validates that Ansible is working for access to all the hosts.
+11.  Changes the nodes to use the MC for DNS. If the private interface is a separate network, changes the nodes to use the MC for NAT, and sets the private interface to be part of the trusted firewall zone.
+12.  Sets up NTP and synchronizes the time on all nodes.
+
+If something doesn't seem to be working correctly, uncomment the `set -x` and `set +x` at the top and bottom of the script to view the execution messages. It should be safe to source the script repeatedly, but it's not really idempotent (e.g., duplicate entries in `/etc/hosts`, etc.).
+
+## Run the Ansible Playbook
+Once the prep script completes successfully, the next step is to run the playbook:
+`ansible-playbook -i hosts.ini site.yml`
+
+You should see a bunch of progress and debug messages on the terminal. When each role completes successfully, the play will pause (by default) and wait for input before continuing with the next role. You can use another window to check that everything looks good, then enter Ctrl-C followed by "C" to continue.
+
+The last role sets up the host is as a Management Console server. If the PoC is running in an isolated environment, you may not be able to open a browser directly to the MC. The play will suggest a potential command to set up an SSH tunnel to allow access from a port on the local machine, but depending on naming and SSH config setup it may need to be adjusted.
+
+## Configure Access to the Vertica Management Console GUI
+Once you can browse to MC GUI, there are a few necessary initial steps to gain access:
+1.   Accept the terms and conditions on the first screen
+2.   Set the password for the MC administrator (`dbadmin` by default). The default `dbadmin` password set up by the playbook is `vertica1$`, so using that here will help keep things consistent. Set the UNIX group name for the administrator to be `verticadba`.
+3.   Select using the Management Console for authentication. (Using LDAP is an option but way beyond the scope of this README.)
+4.   Click "Finish". It'll take several minutes to configure everything and make the Management Console available. Refresh the browser after a few minutes if it still doesn't seem to be back.
+5.   Once you see the authentication box, log in with the username and password you configured in the previous steps (e.g., `dbadmin/vertica1$`).
+6.   You'll see an initial login dialog with pointers to Vertica documentation. Review the docs if desired, and dismiss the dialog.
+7.   On the main screen, click the "Import database" button to import the new database into the Management Console.
+8.   Put in the IP address of the first Vertica node in the cluster (`vertica-node001`) and click "Next".
+9.   Enter the API key from the node. To get the key, run `grep apikey /opt/vertica/config/apikeys.dat | cut -d\" -f4` on the node. This will extract the key from the configuration file.
+10.  Assign the cluster a name for the PoC. Click "Continue".
+11.  Enter the login information for the DB admin user (e.g., `dbadmin/vertica1$`) and click "Import".
+12.  When you see the "You have successfully imported the cluster" message, click "Done".
+
+For more information for using and configuring the MC, see the [Vertica documentation][1d7cb951].
+
+  [1d7cb951]: https://www.vertica.com/docs/latest/HTML/Content/Authoring/InstallationGuide/InstallingMC/ConfiguringManagementConsole.htm "Vertica Docs for Configuring the Management Console"

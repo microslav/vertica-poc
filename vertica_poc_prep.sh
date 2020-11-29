@@ -5,7 +5,7 @@ if [[ "$(basename -- "$0")" == "vertica_poc_prep.sh" ]]; then
     exit 1
 fi
 
-set -x
+# set -x
 
 ######################################################################
 ###
@@ -171,6 +171,7 @@ fi
 [[ -f "${HOME}/.ssh/config" ]] && mv ${HOME}/.ssh/config ${HOME}/.ssh/config_ORIG
 cat <<_EOF_ > ${HOME}/.ssh/config
 Host vertica-* ${POC_PREFIX}-* ${LAB_PRIV_NET}.* command
+   HostName %h
    User root
    IdentityFile ${HOME}/.ssh/vertica-poc
    StrictHostKeyChecking no
@@ -428,4 +429,4 @@ ansible all -m shell -a 'ntpstat'
 ansible all -m shell -a 'timedatectl status | grep "NTP synchronized:"'
 ansible all -m shell -a 'date'
 
-set +x
+# set +x
