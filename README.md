@@ -40,7 +40,7 @@ login is disabled on new instances. The following steps should re-enable it.
 5.  When ready run the `.\outposts-openroot.sh` script to allow `root` login on the instances.
 6.  Finally, edit `~/.ssh/config` and change the Outposts user to `root`. We'll be doing everything as root for this PoC. An example entry would look something like this:
 ```shell
-Host outposts-*
+Host outposts-mc outposts-node*
   AddKeysToAgent yes
   HostName %h
   User root
@@ -56,6 +56,10 @@ Host outposts-*
   scp rapidfile-xx-Linux.rpm ${MY_MC}:/tmp/ # optional RapidFile Toolkit to accelerate high file count operations from Pure
   scp tpcds_dist.tgz ${MY_MC}:/tmp/         # optional distributable for TPC-DS adapted for Vertica Eon mode and PoC
 ```
+8.  Copy the SSH keys to the MC node root Account
+```shell
+  scp ~/.ssh/miroslav-pstg-outpost-keys.pem ${MY_MC}:/root/.ssh/
+```  
 
 ## On the Brand New MC Node
 1.  Connect to the MC instance via `ssh`
