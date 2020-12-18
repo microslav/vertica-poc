@@ -23,7 +23,17 @@ This part should not be necessary for environments where root login to the hosts
 login is disabled on new instances. The following steps should re-enable it.
 
 1.  Edit `/etc/hosts` and set the correct IP addresses for the management console (MC) and cluster node instances.
-2.  Edit `~/.ssh/config` and set the user for the PoC hosts to be whatever the correct user is for those instances. (For Outposts/AWS, it's likely either `ec2-user` or `dbadmin` depending on AMI used.) Make sure a copy of the correct key is in `~/.ssh/` and referenced in the `~/.ssh/config` entry.
+2.  Edit `~/.ssh/config` and set the user for the PoC hosts to be whatever the correct user is for those instances. (For Outposts/AWS, it's likely either `ec2-user` or `dbadmin` depending on AMI used.) Make sure a copy of the correct key is in `~/.ssh/` and referenced in the `~/.ssh/config` entry. An example entry would look something like this:
+```shell
+Host outposts-mc outposts-node*
+  AddKeysToAgent yes
+  IdentitiesOnly yes
+  HostName %h
+  User ec2-user
+  IdentityFile ~/.ssh/miroslav-pstg-outpost-keys.pem
+  StrictHostKeyChecking no
+  UserKnownHostsFile=/dev/null
+```
 3.  Clone this repository onto your laptop or jumpbox, and modify the `outposts-openroot.sh` script.
 ```shell
    sudo yum install -y git && git clone https://github.com/microslav/vertica-poc.git
@@ -37,32 +47,26 @@ login is disabled on new instances. The following steps should re-enable it.
    MC_NAME="outposts-mc"                            # Name of the Management Console instance in /etc/hosts
    NODE_PREFIX="outposts-node"                      # Prefix for the cluster node instances in /etc/hosts
 ```
-5.  When ready run the `.\outposts-openroot.sh` script to allow `root` login on the instances.
-6.  Finally, edit `~/.ssh/config` and change the Outposts user to `root`. We'll be doing everything as root for this PoC. An example entry would look something like this:
-```shell
-Host outposts-mc outposts-node*
-  AddKeysToAgent yes
-  HostName %h
-  User root
-  IdentityFile ~/.ssh/miroslav-pstg-outpost-keys.pem
-  StrictHostKeyChecking no
-  UserKnownHostsFile=/dev/null
-```
+5.  When ready run the `./outposts-openroot.sh` script to allow `root` login on the instances.
+6.  Finally, edit `~/.ssh/config` and change the Outposts user to `root`. We'll be doing everything as root for this PoC.
 7.  Gather the following files that you'll need and use `scp` to copy them into `/tmp/` on the MC:
 ```shell
   MY_MC="outposts-mc"
-  scp vertica-10.xx.yy-zz.x86_64.RHEL6.rpm ${MY_MC}:/tmp/
-  scp vertica-console-10.xx.yy-zz.x86_64.RHEL6.rpm ${MY_MC}:/tmp/
-  scp rapidfile-xx-Linux.rpm ${MY_MC}:/tmp/ # optional RapidFile Toolkit to accelerate high file count operations from Pure
+  scp vertica-10.*.x86_64.RHEL6.rpm ${MY_MC}:/tmp/
+  scp vertica-console-10.*.x86_64.RHEL6.rpm ${MY_MC}:/tmp/
+  scp rapidfile-*-Linux.rpm ${MY_MC}:/tmp/ # optional RapidFile Toolkit to accelerate high file count operations from Pure
   scp tpcds_dist.tgz ${MY_MC}:/tmp/         # optional distributable for TPC-DS adapted for Vertica Eon mode and PoC
 ```
 8.  Copy the SSH keys to the MC node root Account
 ```shell
-  scp ~/.ssh/miroslav-pstg-outpost-keys.pem ${MY_MC}:/root/.ssh/
+  MY_KEY='miroslav-pstg-outpost-keys.pem'
+  scp ~/.ssh/${MY_KEY} ${MY_MC}:/tmp/
+  ssh ${MY_MC} sudo cp /tmp/${MY_KEY} /root/.ssh/
 ```  
 
 ## On the Brand New MC Node
 1.  Connect to the MC instance via `ssh`
+2.  Become `root`: `sudo su - ; cd`
 2.  Make sure git is installed: `yum install -y git`
 3.  Clone this repository onto the instance: `git clone https://github.com/microslav/vertica-poc.git`
 4.  Copy the files to their proper destinations:
