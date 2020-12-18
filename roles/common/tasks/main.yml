@@ -14,17 +14,26 @@
   package:
     name: "{{ extras_uri }}"
     state: present
+    skip_broken: yes
+  ignore_errors: yes
+- pause:
+    seconds: 3
 
 - name: "Install deltarpm to speed up updates"
   package:
     name: deltarpm
     state: present
+    skip_broken: yes
+  ignore_errors: yes
+- pause:
+    seconds: 3
 
 - name: "Update all packages to latest"
   package:
     name: "*"
     state: latest
     skip_broken: yes
+  ignore_errors: yes
 
 - name: "Install System Packages"
   package:
@@ -201,14 +210,6 @@
     owner: "{{ dbuser }}"
     group: "{{ dbgroup }}"
   become: yes
-
-- name: Delete the temporary local copies of the credentials for better security
-  file:
-    path: "{{ item }}"
-    state: absent
-  with_items:
-    - "{{ aws_config_path }}"
-    - "{{ auth_config_path }}"
 
 ### Install and configure Golang on all the hosts (for s5cmd)
 - name: Check if Go is already installed

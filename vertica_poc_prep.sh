@@ -154,7 +154,7 @@ export PUBPATH="${HOME}/.ssh/${KEYNAME}.pub"
 if [ "${IS_AWS_UUID^^}" == "EC2" ]; then
     # If AWS, then check that the key(s) have been uploaded and given expected name(s)
     export KEYPATH="${HOME}/.ssh/${KEYNAME}.pem"
-    [[ -f "${KEYPATH}" ]] || { echo "!!! ERROR: Please upload the private SSH key to ${KEYPATH} !!!"; exit 1; }
+    [[ -f "${KEYPATH}" ]] || { echo "!!! ERROR: Please upload the private SSH key to ${KEYPATH} !!!"; return 1; }
     [[ -f "${PUBPATH}" ]] || ssh-keygen -y -f ${KEYPATH} > ${PUBPATH}
     [[ -L "${HOME}/.ssh/vertica-poc" ]] || ln -s ${KEYPATH} ${HOME}/.ssh/vertica-poc
 else

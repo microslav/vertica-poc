@@ -26,7 +26,7 @@ login is disabled on new instances. The following steps should re-enable it.
 2.  Edit `~/.ssh/config` and set the user for the PoC hosts to be whatever the correct user is for those instances. (For Outposts/AWS, it's likely either `ec2-user` or `dbadmin` depending on AMI used.) Make sure a copy of the correct key is in `~/.ssh/` and referenced in the `~/.ssh/config` entry.
 3.  Clone this repository onto your laptop or jumpbox, and modify the `outposts-openroot.sh` script.
 ```shell
-   yum install -y git && git clone https://github.com/microslav/vertica-poc.git
+   sudo yum install -y git && git clone https://github.com/microslav/vertica-poc.git
    cd vertica-poc
    vim ./outposts-openroot.sh
 ```   
