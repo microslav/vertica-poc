@@ -144,7 +144,7 @@ fi
 dnf install -y ${INITPKG}
 
 ### Use pip to install Ansible to get newer version than EPEL
-pip install --upgrade pip
+pip install --upgrade "pip<21.0" # Lazy cheat to get around Python 2 deprecation; should be using Python 3 and venv
 pip install --upgrade wheel
 pip uninstall -y ansible        # Need EPEL version first to set up system files
 pip install --upgrade ansible
