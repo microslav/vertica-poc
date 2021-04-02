@@ -419,9 +419,18 @@ ansible vertica_nodes -o -m shell -a 'dig command google.com +short'
 ansible vertica_nodes -o -m shell -a "dig -x ${LAB_DNS_IP} +short"
 
 ### Set up NTP and synchronize time on all hosts
+cat <<_EOF_ > /tmp/ntp.conf
+driftfile /var/lib/ntp/drift
+restrict default
+server ${PRIV_IP} iburst
+disable monitor
+_EOF_
 ansible all -o -m shell -a 'timedatectl set-ntp true'
 ansible all -o -m shell -a "timedatectl set-timezone ${POC_TZ}"
 ansible all -m service -a "name=ntpd state=stopped"
+if [ "${PRIV_NDEV}" != "${PUBL_NDEV}" ]; then
+    ansible vertica_nodes -o -m copy  -a "src=/tmp/ntp.conf dest=/etc/ntp.conf"
+fi
 ansible all -o -m shell -a 'ntpd -gq'
 ansible all -m service -a "name=ntpd state=started"
 sleep 10
