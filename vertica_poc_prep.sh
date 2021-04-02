@@ -196,7 +196,7 @@ if [ "${PRIV_NDEV}" != "${PUBL_NDEV}" ]; then
     # Add gateway address to the private interface
     nmcli connection modify ${PRIV_CONN} +ipv4.addresses "${LAB_GW}/${PRIV_PREFIX}"
     # Set up IP forwarding in the kernel for NAT (if not already set up)
-    if [[ $(grep -Fq 'net.ipv4.ip_forward = 1' /etc/sysctl.d/ip_forward.conf) == 0 ]]; then
+    if [[ $(grep -Fqs 'net.ipv4.ip_forward = 1' /etc/sysctl.d/ip_forward.conf) != 0 ]]; then
 	     echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.d/ip_forward.conf
 	     sysctl -p /etc/sysctl.d/ip_forward.conf
     fi
