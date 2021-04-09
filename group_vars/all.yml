@@ -99,21 +99,21 @@ comfy_packages:
   - jq
 
 # Golang information for installation
-go_ver:  "1.15.5"
+go_ver:  "1.16.3"
 go_os:   "linux"
 go_arch: "amd64"
 go_url:  "https://dl.google.com/go"
 go_path: "/usr/local/go/bin"
 
-# s5cmd information for installation (s5cmd 1.2 doesn't seem to work for some reason)
-s5cmd_url: "https://github.com/peak/s5cmd/releases/download/v1.1.0/s5cmd_1.1.0_Linux-64bit.tar.gz"
+# s5cmd information for installation
+s5cmd_url: "https://github.com/peak/s5cmd/releases/download/v1.2.1/s5cmd_1.2.1_Linux-64bit.tar.gz"
 
 # RapidFile Toolkit RPM
-rft_pkg: "rapidfile-1.0.0-beta.4-Linux.rpm"
+rft_pkg: "rapidfile-1.0.0-beta.5-Linux.rpm"
 
 # Vertica RPMs
-vertica_pkg: "vertica-10.0.1-0.x86_64.RHEL6.rpm"
-console_pkg: "vertica-console-10.0.1-0.x86_64.RHEL6.rpm"
+vertica_pkg: "vertica-10.1.0-0.x86_64.RHEL6.rpm"
+console_pkg: "vertica-console-10.1.0-0.x86_64.RHEL6.rpm"
 
 # Info for tuned
 tuned_file: "tuned.conf"
