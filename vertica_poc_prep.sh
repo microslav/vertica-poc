@@ -115,7 +115,8 @@ export DATA_CONN=$(dev_conn "$DATA_NDEV")
 export PRIV_PREFIX=$(echo $PRIV_CIDR | cut -d/ -f2)
 
 ### Initial packages to install before Ansible configured
-export INITPKG="python3"
+export PYPKG="gcc openssl-devel bzip2-devel libffi-devel zlib-devel"
+export PYVER="3.8.9"
 export DNSPKG="dnsmasq bind-utils ntp"
 
 ### For dnsmasq setup
@@ -142,11 +143,24 @@ else
     yum install -y dnf deltarpm
 fi
 
+### Build a recent Python version from source to have a stable environment
+if ! command -v python${PYVER%.*} &> /dev/null
+then
+  dnf install -y ${PYPKG}
+  pushd /usr/src/
+  wget https://www.python.org/ftp/python/${PYVER}/Python-${PYVER}.tgz
+  tar xzf Python-${PYVER}.tgz
+  cd Python-${PYVER}
+  ./configure --enable-optimizations
+  make altinstall
+  popd
+fi
+
 ### Set up virtual environment with Python3 and recent Ansible
 export VENV="pocenv"
-dnf install -y ${INITPKG}
-pip3 install virtualenv
-python3 -m virtualenv ${VENV}
+python${PYVER%.*} -m pip install --upgrade pip
+python${PYVER%.*} -m pip install virtualenv
+python${PYVER%.*} -m virtualenv ${VENV}
 source ${VENV}/bin/activate
 pip install --upgrade ansible
 
