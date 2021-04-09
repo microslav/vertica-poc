@@ -12,34 +12,42 @@
 ### Set up the FlashBlade to be ready for the deployment
 ### Save the access credentials in files for later
 ### Run all the FlashBlade tasks locally
-- name: Install or update the python-pip package
-  package:
-    name: python-pip
-    state: latest
-
-- name: Upgrade pip (via pip) to latest
-  pip:
-    name: pip
-    state: latest
-
 - name: Install or upgrade required purity-fb Python module
   pip:
     name: purity-fb
     state: latest
 
-- name: Collect default set of info
+- name: Install or upgrade required py-pure-client Python module
+  pip:
+    name: py-pure-client
+    state: latest
+
+- name: Collect FlashBlade configuration info
   purefb_info:
     gather_subset:
-      - all
+      - config
     fb_url: "{{ fb_mgmt }}"
     api_token: "{{ fb_api_token }}"
   ignore_errors: yes
   # Ignore errors just in case. Usually due to self-signed TLS certificates
   register: blade_info
-- name: Show default information
+- name: Show FlashBlade configuration information
   debug:
     msg:
-      - "{{ blade_info['purefb_info']['default'] }}"
+      - "{{ blade_info['purefb_info']['config'] }}"
+
+- name: Collect Bucket info
+  purefb_info:
+    gather_subset:
+      - buckets
+    fb_url: "{{ fb_mgmt }}"
+    api_token: "{{ fb_api_token }}"
+  ignore_errors: yes
+  # Ignore errors just in case. Usually due to self-signed TLS certificates
+  register: blade_info
+- name: Show information on existing FlashBlade buckets
+  debug:
+    msg:
       - "{{ blade_info['purefb_info']['buckets'] }}"
 
 - name: Create new Filesystem to use for PoC

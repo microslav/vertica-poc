@@ -115,7 +115,7 @@ export DATA_CONN=$(dev_conn "$DATA_NDEV")
 export PRIV_PREFIX=$(echo $PRIV_CIDR | cut -d/ -f2)
 
 ### Initial packages to install before Ansible configured
-export INITPKG="python-pip ansible"
+export INITPKG="python3"
 export DNSPKG="dnsmasq bind-utils ntp"
 
 ### For dnsmasq setup
@@ -141,12 +141,13 @@ else
     yum install -y epel-release
     yum install -y dnf deltarpm
 fi
-dnf install -y ${INITPKG}
 
-### Use pip to install Ansible to get newer version than EPEL
-pip install --upgrade "pip<21.0" # Lazy cheat to get around Python 2 deprecation; should be using Python 3 and venv
-pip install --upgrade wheel
-pip uninstall -y ansible        # Need EPEL version first to set up system files
+### Set up virtual environment with Python3 and recent Ansible
+export VENV="pocenv"
+dnf install -y ${INITPKG}
+pip3 install virtualenv
+python3 -m virtualenv ${VENV}
+source ${VENV}/bin/activate
 pip install --upgrade ansible
 
 ### Set up SSH keys for login and Ansible
@@ -231,10 +232,11 @@ systemctl restart network && systemctl restart firewalld
 dnf install -y $DNSPKG
 
 # Save original files just in case
-cp /etc/dnsmasq.conf /etc/dnsmasq_$(printf '%(%Y-%m-%d_%H-%M-%S)T.bkup' -1)
-cp /etc/hosts /etc/hosts_$(printf '%(%Y-%m-%d_%H-%M-%S)T.bkup' -1)
-cp /etc/ansible/hosts /etc/ansible/hosts_$(printf '%(%Y-%m-%d_%H-%M-%S)T.bkup' -1)
-cp /etc/ansible/ansible.cfg /etc/ansible/ansible.cfg_$(printf '%(%Y-%m-%d_%H-%M-%S)T.bkup' -1)
+TS="$(printf '%(%Y-%m-%d_%H-%M-%S)T.bkup' -1)"
+cp /etc/dnsmasq.conf /etc/dnsmasq_${TS}
+cp /etc/hosts /etc/hosts_${TS}
+cp /etc/ansible/hosts /etc/ansible/hosts_${TS}
+cp /etc/ansible/ansible.cfg /etc/ansible/ansible.cfg_${TS}
 
 # Generate new dnsmasq config file:
 cat <<_EOF_  > /etc/dnsmasq.conf
