@@ -115,8 +115,7 @@ export DATA_CONN=$(dev_conn "$DATA_NDEV")
 export PRIV_PREFIX=$(echo $PRIV_CIDR | cut -d/ -f2)
 
 ### Initial packages to install before Ansible configured
-export PYPKG="gcc openssl-devel bzip2-devel libffi-devel zlib-devel"
-export PYVER="3.8.9"
+export PYPKG="gcc openssl-devel bzip2-devel libffi-devel zlib-devel python3 python3-devel libselinux-python3"
 export DNSPKG="dnsmasq bind-utils ntp"
 
 ### For dnsmasq setup
@@ -143,26 +142,16 @@ else
     yum install -y dnf deltarpm
 fi
 
-### Build a recent Python version from source to have a stable environment
-if ! command -v python${PYVER%.*} &> /dev/null
-then
-  dnf install -y ${PYPKG}
-  pushd /usr/src/
-  wget https://www.python.org/ftp/python/${PYVER}/Python-${PYVER}.tgz
-  tar xzf Python-${PYVER}.tgz
-  cd Python-${PYVER}
-  ./configure --enable-optimizations
-  make altinstall
-  popd
-fi
+### Install or update python3 and related packages
+dnf install -y ${PYPKG}
 
 ### Set up virtual environment with Python3 and recent Ansible
 export VENV="pocenv"
-python${PYVER%.*} -m pip install --upgrade pip
-python${PYVER%.*} -m pip install virtualenv
-python${PYVER%.*} -m virtualenv ${VENV}
-source ${VENV}/bin/activate
-pip install --upgrade ansible
+python3 -m ensurepip
+python3 -m pip install virtualenv
+python3 -m virtualenv ${PWD}/${VENV}
+source ${PWD}/${VENV}/bin/activate
+pip install --upgrade ansible selinux
 
 ### Set up SSH keys for login and Ansible
 export PUBPATH="${HOME}/.ssh/${KEYNAME}.pub"
@@ -366,6 +355,7 @@ mc
 vertica_nodes
 
 [${POC_ANSIBLE_GROUP}:vars]
+ansible_shell_executable=/bin/bash
 ansible_user=root
 ansible_ssh_private_key_file=${HOME}/.ssh/vertica-poc
 _EOF_
@@ -398,6 +388,9 @@ done
 
 ### Make sure Ansible is working
 ansible all -o -m ping
+
+### Install python3 on all the nodes
+ansible all -m package -a 'name=python3 state=latest'
 
 ### Install packages we'll need on the PoC
 ### Configure PoC hosts
