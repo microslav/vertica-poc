@@ -14,7 +14,7 @@
 ### Run all the FlashBlade tasks locally
 - name: Install or upgrade required purity-fb Python module
   pip:
-    name: purity-fb
+    name: purity_fb
     state: latest
 
 - name: Install or upgrade required py-pure-client Python module

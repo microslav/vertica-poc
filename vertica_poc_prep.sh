@@ -314,11 +314,11 @@ if [ "${PRETTY_NAME}" == "${AZL2_NAME}" ]; then
     systemctl restart network
 else
     if [ "${PRIV_CONN}" != "${PUBL_NDEV}" ]; then
-	nmcli connection modify ${PRIV_CONN} ipv4.ignore-auto-dns yes
-	nmcli connection modify ${PRIV_CONN} ipv4.dns ${LAB_DNS_IP}
-	nmcli connection modify ${PRIV_CONN} ipv4.dns-search ${LAB_DOM}
-	nohup bash -c "nmcli connection down ${PRIV_CONN} && nmcli connection up ${PRIV_CONN}"
-	sleep 1
+	      nmcli connection modify ${PRIV_CONN} ipv4.ignore-auto-dns yes
+	      nmcli connection modify ${PRIV_CONN} ipv4.dns ${LAB_DNS_IP}
+	      nmcli connection modify ${PRIV_CONN} ipv4.dns-search ${LAB_DOM}
+	      nohup bash -c "nmcli connection down ${PRIV_CONN} && nmcli connection up ${PRIV_CONN}"
+	      sleep 1
     fi
     nmcli connection modify ${PUBL_CONN} ipv4.ignore-auto-dns yes
     nmcli connection modify ${PUBL_CONN} ipv4.dns ${LAB_DNS_IP}
@@ -359,13 +359,15 @@ ansible_shell_executable=/bin/bash
 ansible_user=root
 ansible_ssh_private_key_file=${HOME}/.ssh/vertica-poc
 _EOF_
-cat ./hosts.ini >> /etc/ansible/hosts
 
-### Modify Ansible config for convenience
-sed -i 's|^#forks\s*=\s*5|forks = 32\ninterpreter_python = auto_legacy_silent|g' /etc/ansible/ansible.cfg
-sed -i 's|^#executable\s*=\s*/bin/sh|executable = /bin/bash|g' /etc/ansible/ansible.cfg
-sed -i 's|^#callback_whitelist\s*=\s*.*$|callback_whitelist = timer, profile_tasks|g' /etc/ansible/ansible.cfg
-cat <<_EOF_ >> /etc/ansible/ansible.cfg
+### Create local Ansible config file and use local inventory file
+cat <<_EOF_ > ./ansible.cfg
+[defaults]
+inventory = ${PWD}/hosts.ini
+forks = 32
+executable = /bin/bash
+host_key_checking = False
+callback_whitelist = timer, profile_tasks
 
 ### Enable task timing info
 [callback_profile_tasks]
@@ -380,9 +382,9 @@ echo "(say 'yes' if prompted and enter password repeatedly)"
 for node in ${NODES}
 do
     if [ ${IS_AWS_UUID^^} == "EC2" ]; then
-	ssh -i $KEYPATH ${OS_USERNAME}@${node} "sudo cp /home/${OS_USERNAME}/.ssh/authorized_keys /root/.ssh/authorized_keys"
+	      ssh -i $KEYPATH ${OS_USERNAME}@${node} "sudo cp /home/${OS_USERNAME}/.ssh/authorized_keys /root/.ssh/authorized_keys"
     else
-	ssh-copy-id -i $KEYPATH root@${node}
+	      ssh-copy-id -i $KEYPATH root@${node}
     fi
 done
 
