@@ -15,12 +15,14 @@
 - name: Install or upgrade required purity-fb Python module
   pip:
     name: purity_fb
-    state: latest
+    state: present
+    virtualenv: "{{ lookup('env','VIRTUAL_ENV') }}"
 
 - name: Install or upgrade required py-pure-client Python module
   pip:
     name: py-pure-client
-    state: latest
+    state: present
+    virtualenv: "{{ lookup('env','VIRTUAL_ENV') }}"
 
 - name: Collect FlashBlade configuration info
   purefb_info:
