@@ -155,12 +155,14 @@ Edit the IP addresses associated with the entries within the script. Some things
 
 ## Set Playbook Execution Options
 The playbook is set up with a few options to control the flow of execution:
--   **VA_RUN_VPERF**="yes" - The playbook is set up to run the [Vertica Validation Scripts][7a3cfca5] to measure CPU, network, and IO performance. These add about 10-12 minutes to the playbook runtime. If you'd rather skip those tests, change this variable to "no".
+-   **VA_SEL_REBOOT**="yes" - Vertica doesn't support [SE Linux][2ed70199], so it needs to be disabled or in permissive mode. The playbook disables it, but the state isn't fully cleared until the node is rebooted. This can take a long time on older physical hosts. Set this to "no" in order to avoid the reboot.
+-   **VA_RUN_VPERF**="yes" - The playbook is set up to run the [Vertica Validation Scripts][a0e95fd9] to measure CPU, network, and IO performance. These add about 10-12 minutes to the playbook runtime. If you'd rather skip those tests, change this variable to "no".
 -   **VA_RUN_VMART**="yes" - The playbook is set up to run the [Vertica VMart Example Database][7de0a199]. It will generate the test data, load the data into the database, and then run queries against the data from all the nodes. The data loading has been parallelized (using `ON ANY NODE` syntax), but the data generation is single-threaded and happens on only a single node. Running these tasks is a great way to ensure everything is working, but adds about 60 minutes to the overall runtime. If you just want to set things up and skip the test, change this to "no".
 -   **VA_PAUSE_CHECK**="yes" - To provide more control and potential to catch errors, the playbook will pause after each role completes its tasks. When paused, hit Ctrl-C, then either "C" to continue, or "A" to abort. If you abort (or a play fails), you can resume the play at the next incomplete section by commenting out whichever roles completed successfully in the `site.yml` file. Change this to "no" if you would like all the roles and tasks to be run in a single pass.
 
-    [7a3cfca5]: https://www.vertica.com/docs/latest/HTML/Content/Authoring/InstallationGuide/scripts/ValidationScripts.htm "Vertica Validation Scripts"
     [7de0a199]: https://www.vertica.com/docs/latest/HTML/Content/Authoring/GettingStartedGuide/IntroducingVMart/IntroducingVMart.htm "Vertica VMart Example Database"
+    [a0e95fd9]: https://www.vertica.com/docs/latest/HTML/Content/Authoring/InstallationGuide/scripts/ValidationScripts.htm "Vertica Validation Scripts"
+    [2ed70199]: https://www.vertica.com/docs/l/HTML/Content/Authoring/InstallationGuide/BeforeYouInstall/SELinux.htm "SE Linux Configuration"
 
 # Run the Playbook
 Once everything has been prepared, the hard part should be over. There are now three main steps to configuring getting a working Vertica PoC running (each covered in more detail below):

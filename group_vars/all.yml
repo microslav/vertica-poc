@@ -119,6 +119,9 @@ console_pkg: "vertica-console-10.1.0-0.x86_64.RHEL6.rpm"
 tuned_file: "tuned.conf"
 tuned_config_dir: "/etc/tuned/vertica-performance"
 
+# Should nodes be rebooted to clear SE Linux state
+sel_reboot: "{{ lookup('env','VA_SEL_REBOOT')|bool }}"
+
 # Vertica v*perf test info
 vperf_runsteps: "{{ lookup('env','VA_RUN_VPERF')|bool }}"
 vperf_dir: "vperf_reports"

@@ -272,7 +272,8 @@
   reboot:
     pre_reboot_delay: 60
     post_reboot_delay: 60
-    reboot_timeout: 600
+    reboot_timeout: 3600
+  when: sel_reboot
   register: out
 - debug: var=out
 

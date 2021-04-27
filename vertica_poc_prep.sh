@@ -75,6 +75,7 @@ read -r -d '' STORAGE_ENTRIES <<-_EOF_
 _EOF_
 
 ### Configure how and what to run in the playbook
+export VA_SEL_REBOOT="yes"
 export VA_RUN_VPERF="yes"
 export VA_RUN_VMART="yes"
 export VA_PAUSE_CHECK="yes"
