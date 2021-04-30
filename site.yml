@@ -2,7 +2,7 @@
 # This playbook will deploy a Vertica cluster and Management Console for FlashBlade PoC's
 # Assuming that target hosts are running RHEL/CentOS flavored OS
 - name: Configure the FlashBlade for use with Vertica and this Playbook
-  hosts: mc
+  hosts: localhost
   collections:
     - purestorage.flashblade
   gather_facts: yes
@@ -34,4 +34,3 @@
   - mc
 
 ...
-
