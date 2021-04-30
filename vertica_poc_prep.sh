@@ -392,15 +392,17 @@ done
 ### Make sure Ansible is working
 ansible all -o -m ping
 
-### Install python3 on all the nodes
-ansible all -m package -a 'name=python3 state=latest'
-
 ### Install packages we'll need on the PoC
+# Install packages we'll need later
+ansible vertica_nodes -m package -a 'name=NetworkManager,bind-utils,ntp,traceroute,firewalld,python3 state=latest'
+
 ### Configure PoC hosts
 # Rename the hosts to match /etc/hosts and Ansible inventory
 ansible vertica_nodes -o -m hostname -a "name={{ inventory_hostname_short }}"
-# Install packages we'll need later
-ansible vertica_nodes -m package -a 'name=bind-utils,ntp,traceroute,firewalld state=present'
+# Make sure NetworkManager and firewalld are running and enabled
+ansible vertica_nodes -m systemd -a 'name=NetworkManager state=started enabled=yes masked=no'
+ansible vertica_nodes -m systemd -a 'name=firewalld state=started enabled=yes masked=no'
+
 # Add dnsmasq DNS to the private interface (and public interface if they're the same)
 if [ "${PRETTY_NAME}" == "${AZL2_NAME}" ]; then
     # Amazon Linux doesn't use NetworkManager and nmcli
