@@ -61,49 +61,6 @@
   timezone:
     name: "{{ host_tz }}"
 
-### Get hostname resolution on all the hosts using /etc/hosts as a failback if DNS breaks
-- name: Update the /etc/hosts file on each node with all the names
-  lineinfile:
-    path: "/etc/hosts"
-    regexp: ".*\t{{ hostvars[item]['ansible_hostname'] }}"
-    line: "{{ hostvars[item]['ansible_env'].SSH_CONNECTION.split(' ')[2] }}\t{{ hostvars[item]['ansible_hostname'] }}"
-    state: present
-    backup: yes
-  when: (ansible_hostname != item) or (ansible_hostname == item)
-  with_items: "{{ groups[hosts_group] }}"
-
-- name: Get the FlashBlade Data IP address
-  shell:
-    cmd: getent hosts "{{ fb_data }}"
-  delegate_to: localhost
-  register: out
-- debug:
-    var: out.stdout_lines[0]
-- name: Update the /etc/hosts file with the FlashBlade Data VIP
-  lineinfile:
-    path: "/etc/hosts"
-    regexp: ".*\t{{ fb_data }}"
-    line: "{{ out.stdout_lines[0] }}"
-    state: present
-    backup: yes
-  when: out.stdout|length > 0
-
-- name: Get the FlashBlade Management IP address
-  shell:
-    cmd: getent hosts "{{ fb_mgmt }}"
-  register: out
-  delegate_to: localhost
-- debug:
-    var: out.stdout_lines[0]
-- name: Update the /etc/hosts file with the FlashBlade Management VIP
-  lineinfile:
-    path: "/etc/hosts"
-    regexp: ".*\t{{ fb_mgmt }}"
-    line: "{{ out.stdout_lines[0] }}"
-    state: present
-    backup: yes
-  when: out.stdout|length > 0
-
 ### Configure root and the Vertica admin user
 - name: "Create {{ dbgroup }} group for the new user if it doesn't exist"
   group:
