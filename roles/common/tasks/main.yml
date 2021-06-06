@@ -228,7 +228,7 @@
   vars:
     hello_path: "{{ go_path.stdout_lines[0] }}/src/hello"
   shell:
-    cmd: "cd {{ hello_path }} && go build && ./hello"
+    cmd: "cd {{ hello_path }} && go mod init && go build && ./hello"
   register: hello_out
 - debug: var=hello_out.stdout_lines
 

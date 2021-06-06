@@ -397,13 +397,12 @@ ansible all -o -m ping
 
 ### Install packages we'll need on the PoC
 # Install packages we'll need later
-ansible vertica_nodes -m package -a 'name=NetworkManager,bind-utils,ntp,traceroute,firewalld,python3 state=latest'
+ansible vertica_nodes -m package -a 'name=bind-utils,ntp,traceroute,firewalld,python3 state=latest'
 
 ### Configure PoC hosts
 # Rename the hosts to match /etc/hosts and Ansible inventory
 ansible vertica_nodes -o -m hostname -a "name={{ inventory_hostname_short }}"
 # Make sure NetworkManager and firewalld are running and enabled
-ansible vertica_nodes -m systemd -a 'name=NetworkManager state=started enabled=yes masked=no'
 ansible vertica_nodes -m systemd -a 'name=firewalld state=started enabled=yes masked=no'
 
 # Add dnsmasq DNS to the private interface (and public interface if they're the same)
@@ -413,6 +412,8 @@ if [ "${PRETTY_NAME}" == "${AZL2_NAME}" ]; then
     ansible vertica_nodes -o -m shell -a "cat /tmp/ifcfg_delta >> /etc/sysconfig/network-scripts/ifcfg-${PRIV_NDEV}"
     ansible vertica_nodes -o -m shell -a "cp /etc/resolv.conf /etc/resolv.ORIG"
 else
+    ansible vertica_nodes -m package -a 'name=NetworkManager state=latest'
+    ansible vertica_nodes -m systemd -a 'name=NetworkManager state=started enabled=yes masked=no'
     ansible vertica_nodes -o -m nmcli \
 	    -a "type=ethernet conn_name=${PRIV_NDEV} gw4=${LAB_GW} dns4=${LAB_DNS_IP} dns4_search=${LAB_DOM} state=present"
 fi

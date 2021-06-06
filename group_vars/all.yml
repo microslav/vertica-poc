@@ -99,14 +99,15 @@ comfy_packages:
   - jq
 
 # Golang information for installation
-go_ver:  "1.16.3"
+go_ver:  "1.16.5"
 go_os:   "linux"
 go_arch: "amd64"
 go_url:  "https://dl.google.com/go"
 go_path: "/usr/local/go/bin"
 
 # s5cmd information for installation
-s5cmd_url: "https://github.com/peak/s5cmd/releases/download/v1.2.1/s5cmd_1.2.1_Linux-64bit.tar.gz"
+s5cmd_ver: "1.2.1"
+s5cmd_url: "https://github.com/peak/s5cmd/releases/download/v{{ s5cmd_ver }}/s5cmd_{{ s5cmd_ver }}_Linux-64bit.tar.gz"
 
 # RapidFile Toolkit RPM
 rft_pkg: "rapidfile-1.0.0-beta.5-Linux.rpm"
