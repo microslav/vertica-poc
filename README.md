@@ -66,15 +66,15 @@ Host outposts-mc outposts-node*
 
 ## On the Brand New MC Node
 1.  Connect to the MC instance via `ssh`
-2.  Become `root`: `sudo su - ; cd`
+2.  Become `root` if not already connected as root: `sudo su - ; cd`
 2.  Make sure git is installed: `yum install -y git`
 3.  Clone this repository onto the instance: `git clone https://github.com/microslav/vertica-poc.git`
 4.  Copy the files to their proper destinations:
 ```shell
    cd vertica-poc
-   cp /tmp/vertica-10.0.1-0.x86_64.RHEL6.rpm roles/vertica-node/files/
-   cp /tmp/vertica-console-10.0.1-0.x86_64.RHEL6.rpm roles/mc/files/
-   cp /tmp/rapidfile-1.0.0-beta.4-Linux.rpm roles/vertica-node/files/
+   cp /tmp/vertica-*.x86_64.RHEL6.rpm roles/vertica-node/files/
+   cp /tmp/vertica-console-*.x86_64.RHEL6.rpm roles/mc/files/
+   cp /tmp/rapidfile-*-Linux.rpm roles/vertica-node/files/
    cp /tmp/tpcds_dist.tgz roles/primary-node/files/
 
 ```
