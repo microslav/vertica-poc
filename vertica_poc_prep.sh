@@ -370,6 +370,7 @@ forks = 32
 executable = /bin/bash
 host_key_checking = False
 deprecation_warnings = False
+interpreter_python = auto_silent
 callback_enabled = timer, profile_tasks
 
 ### Enable task timing info
