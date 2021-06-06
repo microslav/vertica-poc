@@ -320,8 +320,11 @@
 
 - pause:
     prompt: |
+      --------------------------------------------------------------------------------
+      ---==> RUN THE outposts-ephemeral.sh SCRIPT (IF NEEDED) BEFORE PROCEEDING <==---
+      --------------------------------------------------------------------------------
       Check that the last step was successful.
-      If everying looks good, hit Ctrl-C,C
+      If everying looks good, hit Ctrl-C,C when ready
   when: check_exec
 
 ...
