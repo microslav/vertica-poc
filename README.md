@@ -52,8 +52,8 @@ Host outposts-mc outposts-node*
 7.  Gather the following files that you'll need and use `scp` to copy them into `/tmp/` on the MC:
 ```shell
   MY_MC="outposts-mc"
-  scp vertica-10.*.x86_64.RHEL6.rpm ${MY_MC}:/tmp/
-  scp vertica-console-10.*.x86_64.RHEL6.rpm ${MY_MC}:/tmp/
+  scp vertica-*.x86_64.RHEL6.rpm ${MY_MC}:/tmp/
+  scp vertica-console-*.x86_64.RHEL6.rpm ${MY_MC}:/tmp/
   scp rapidfile-*-Linux.rpm ${MY_MC}:/tmp/ # optional RapidFile Toolkit to accelerate high file count operations from Pure
   scp tpcds_dist.tgz ${MY_MC}:/tmp/         # optional distributable for TPC-DS adapted for Vertica Eon mode and PoC
 ```

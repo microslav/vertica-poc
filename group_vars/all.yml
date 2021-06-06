@@ -130,7 +130,7 @@ vbin_path: "/opt/vertica/bin"
 vnodes_ips: "{{ groups['vertica_nodes'] | map('extract', hostvars, ['ansible_facts',lookup('env','PRIV_NDEV'),'ipv4','address']) | join(',') }}"
 vperf_io_dur: "240"
 vperf_io_logdur: "{{ ((vperf_io_dur|int)/4)|int }}"
-vperf_io_locpath: "/home/{{ dbuser }}/"
+vperf_io_locpath: "/home/{{ dbuser }}/depot/"
 vperf_io_nfspath: "/mnt/{{ fb_fs_name }}/"
 
 # Vertica Cluster and Database info
