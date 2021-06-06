@@ -151,8 +151,9 @@ export VENV="pocenv"
 python3 -m ensurepip
 python3 -m pip install virtualenv
 python3 -m virtualenv ${PWD}/${VENV}
+pip3 install --upgrade selinux  # Also needed outside venv on AWS for some reason
 source ${PWD}/${VENV}/bin/activate
-pip install --upgrade ansible selinux
+pip3 install --upgrade ansible selinux
 
 ### Set up SSH keys for login and Ansible
 export PUBPATH="${HOME}/.ssh/${KEYNAME}.pub"
@@ -368,6 +369,7 @@ inventory = ${PWD}/hosts.ini
 forks = 32
 executable = /bin/bash
 host_key_checking = False
+deprecation_warnings = False
 callback_whitelist = timer, profile_tasks
 
 ### Enable task timing info
