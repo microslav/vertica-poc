@@ -370,7 +370,7 @@ forks = 32
 executable = /bin/bash
 host_key_checking = False
 deprecation_warnings = False
-callback_whitelist = timer, profile_tasks
+callback_enabled = timer, profile_tasks
 
 ### Enable task timing info
 [callback_profile_tasks]
