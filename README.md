@@ -1,3 +1,8 @@
+# Merged with PureStorage-OpenConnect space
+The code here has been merged into the https://github.com/PureStorage-OpenConnect/vertica repository as of 2021-June-07. Please look there for more validated versions of the code and releases. 
+
+-----------------------------------------------------
+
 # Vertica PoC
 This repository hosts code for quickly building out Vertica PoC environments for demos and tests. The focus is on Vertica Eon mode, with the S3 communal storage placed on Pure Storage FlashBlade.
 
