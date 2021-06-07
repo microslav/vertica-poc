@@ -1,0 +1,376 @@
+# Clone a Vertica DB and Test Reviving it on Another Cluster
+---
+- name: Clone a Vertica DB and Test Reviving it on Another Cluster
+  hosts: localhost
+  vars:
+    src_hg: "src_cluster"
+    dst_hg: "test_cluster"
+  gather_facts: yes
+  tasks:
+  # Run on localhost
+    - name: <<LOC>> Make variables available across plays
+      set_fact:
+        src_group: "{{ src_hg }}"
+        dst_group: "{{ dst_hg }}"
+        src_host: "{{ groups[lookup('vars','src_hg')][0] }}"
+        dst_host: "{{ groups[lookup('vars','dst_hg')][0] }}"
+        src_bucket: "{{ lookup('env','SRC_BUCKET') }}"
+        src_aws_profile: "{{ lookup('env','SRC_AWS_PROFILE') }}"
+        src_s5: "{{ lookup('env','SRC_S5') }}"
+        src_prefix: "{{ lookup('env','SRC_PREFIX') }}"
+        dst_prefix: "{{ lookup('env','DST_PREFIX') }}"
+        auth_path: "{{ lookup('env','DST_CLONE_AUTH') }}"
+        run_as: "{{ lookup('env','RUN_AS') }}"
+        vs_usage: >-
+          select proj, ROS_num, rows_mln, GB from (
+            select projection_name proj, sum(ros_count) ROS_num, round(sum(row_count)/10^6,2) as rows_mln, round(sum(used_bytes)/1024^3,2) as GB
+            from projection_storage where 1=1 group by 1
+          ) as x where GB > 0 order by GB desc limit 10;
+        count_star: "select count(*) from {{ lookup('env','CANARY_TABLE') }};"
+        flush_source: "{{ lookup('env','FLUSH_SOURCE')|bool }}"
+
+
+- name: ---==> SOURCE PLAY <==--- Prepare source database for cloning
+  hosts: "{{ src_host }}"
+  vars:
+    src_host: "{{ hostvars['localhost']['src_host'] }}"
+    src_prefix: "{{ hostvars['localhost']['src_prefix'] }}"
+    dst_prefix: "{{ hostvars['localhost']['dst_prefix'] }}"
+    src_bucket: "{{ hostvars['localhost']['src_bucket'] }}"
+    run_as: "{{ hostvars['localhost']['run_as'] }}"
+    vs_usage: "{{ hostvars['localhost']['vs_usage'] }}"
+    count_star: "{{ hostvars['localhost']['count_star'] }}"
+    flush_source: "{{ hostvars['localhost']['flush_source'] }}"
+  gather_facts: yes
+  tasks:
+  # Run on Source Cluster
+    - name: <<SRC>> Get source cluster database name
+      shell:
+        cmd: "vsql -tc \"select dbname();\" | sed '/^$/d' | sed 's/ //g'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      register: out
+    - set_fact:
+        db_name: "{{ out.stdout }}"
+    - debug: msg="Source database is {{ db_name }}"
+
+    - name: <<SRC>> Get source communal storage path
+      shell:
+        cmd: "vsql -tc \"select location_path from storage_locations where node_name is null and location_path like 's3://%';\" | sed -e '/^$/d' -e 's/ //g'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      register: out
+    - set_fact:
+        clone_s3_src: "{{ out.stdout }}/"
+        clone_s3_dst: "{{ out.stdout | replace(src_prefix,dst_prefix) }}/"
+    - debug: msg="Source S3 is {{ clone_s3_src }} and Destination S3 is {{ clone_s3_dst }}"
+
+    - name: <<SRC>> Display large Projections from source database
+      shell:
+        cmd: "vsql -c \"{{ vs_usage }}\" | sed '/^$/d'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      register: out
+    - debug: var=out.stdout_lines
+
+    - name: <<SRC>> Display count of rows
+      shell:
+        cmd: "vsql -c \"{{ count_star }}\" | sed '/^$/d'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      register: out
+    - debug: var=out.stdout_lines
+
+    - name: <<SRC>> Pause catalog updates
+      shell:
+        cmd: >-
+          vsql -qt -c "ALTER DATABASE DEFAULT SET CatalogSyncInterval = '6 hours';"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      register: out
+    - debug: var=out.stdout_lines
+
+    - name: <<SRC>> Flush Data Collector and Reaper Queue
+      shell:
+        cmd: "vsql -qt -c 'SELECT flush_data_collector(); SELECT flush_reaper_queue();'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      register: out
+      when: flush_source
+    - debug: var=out.stdout_lines
+      when: flush_source
+
+    - name: <<SRC>> Wait until synced to communal storage
+      shell:
+        cmd: >-
+          vsql -qt -c "SELECT hurry_service('System','TxnLogSyncTask');" \
+           && vsql -qt -c "SELECT sync_catalog();" \
+           && vsql -qt -c "SELECT count(*) from system_services where service_name='TxnLogSyncTask' and last_run_end is null;" | \
+            sed -e '/^$/d' -e 's/ //g'
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      ignore_errors: yes
+      register: out
+      until: out.stdout_lines[-1] == "0"
+      retries: 12
+      delay: 5
+
+- name: ---==> DESTINATION PLAY <==--- Clone the Database from Destination Bucket on Destination Cluster
+  hosts: "{{ dst_host }}"
+  vars:
+    src_host: "{{ hostvars['localhost']['src_host'] }}"
+    dst_host: "{{ hostvars['localhost']['dst_host'] }}"
+    dst_nodes: "{{ groups[hostvars['localhost']['dst_group']] | map('extract', hostvars, ['inventory_hostname_short']) | join(',') }}"
+    run_as: "{{ hostvars['localhost']['run_as'] }}"
+    grab_exe: "grab_lease_now"
+    auth_path: "/home/{{ run_as }}/auth_params.conf"
+    my_s5: "{{ hostvars['localhost']['src_s5'] }}"
+    db_name: "{{ hostvars[lookup('vars','src_host')]['db_name'] }}"
+    clone_s3_src: "{{ hostvars[lookup('vars','src_host')]['clone_s3_src'] }}"
+    clone_s3_dst: "{{ hostvars[lookup('vars','src_host')]['clone_s3_dst'] }}"
+  gather_facts: yes
+  tasks:
+    - name: <<DST>> Tune destination cluster host to handle more open connections and reuse time_wait sockets
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_set: yes
+      with_items:
+        - { name: "net.ipv4.tcp_fin_timeout", value: "20" }
+        - { name: "net.ipv4.tcp_tw_reuse", value: "1" }
+        - { name: "net.ipv4.ip_local_port_range", value: "16384 65535" }
+
+    - name: <<DST>> Make sure the lease takeover script is available in the cluster
+      copy:
+        src: "files/{{ grab_exe }}"
+        dest: "/opt/vertica/bin/"
+        mode: "0755"
+
+    - name: <<DST>> Get du -H for clone source prefix
+      shell:
+        cmd: "{{ my_s5 }} du -H '{{ clone_s3_src }}*'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      register: out
+    - debug: var=out.stdout_lines
+
+    - name: <<DST>> Clone the {{ db_name }} database to the destination path
+      shell:
+        cmd: "{{ my_s5 }} --log=error cp '{{ clone_s3_src }}*' {{ clone_s3_dst }}"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      ignore_errors: yes
+      register: out
+    - debug: var=out
+
+    - name: <<DST>> Check the size of the cloned destination prefix
+      shell:
+        cmd: "{{ my_s5 }} du -H '{{ clone_s3_dst }}*'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      register: out
+    - debug: var=out.stdout_lines
+
+
+- name: ---==> SOURCE PLAY <==--- Resume periodic catalog updates on source database
+  hosts: "{{ src_host }}"
+  vars:
+    src_host: "{{ hostvars['localhost']['src_host'] }}"
+    run_as: "{{ hostvars['localhost']['run_as'] }}"
+  gather_facts: yes
+  tasks:
+  - name: <<SRC>> Resume catalog updates and sync
+    shell:
+      cmd: "vsql -qt -c \"ALTER DATABASE DEFAULT CLEAR CatalogSyncInterval; SELECT sync_catalog();\" "
+    become: yes
+    become_user: "{{ run_as }}"
+    become_method: su
+    register: out
+  - debug: var=out.stdout_lines
+  # In production it'll be important to resume the catalog updates manually if the playbook
+  # fails before this this step is run. Don't want too much of a backlog.
+
+
+- name: ---==> DESTINATION PLAY <==--- Test the Cloned Database on the Destination Cluster
+  hosts: "{{ dst_group }}"
+  vars:
+    dst_group: "{{ hostvars['localhost']['dst_group'] }}"
+    src_host: "{{ hostvars['localhost']['src_host'] }}"
+    dst_host: "{{ hostvars['localhost']['dst_host'] }}"
+    dst_nodes: "{{ groups[hostvars['localhost']['dst_group']] | map('extract', hostvars, ['inventory_hostname_short']) | join(',') }}"
+    run_as: "{{ hostvars['localhost']['run_as'] }}"
+    grab_exe: "grab_lease_now"
+    auth_path: "{{ hostvars['localhost']['auth_path'] }}"
+    tmp_conf: "/tmp/{{ run_as }}_new_cluster_config.json"
+    my_s5: "{{ hostvars['localhost']['src_s5'] }}"
+    db_name: "{{ hostvars[lookup('vars','src_host')]['db_name'] }}"
+    clone_s3_dst: "{{ hostvars[lookup('vars','src_host')]['clone_s3_dst'] }}"
+    vs_usage: "{{ hostvars['localhost']['vs_usage'] }}"
+    count_star: "{{ hostvars['localhost']['count_star'] }}"
+  gather_facts: yes
+  tasks:
+  tasks:
+    - name: <<DST>> Generate the updated cluster_config.json file
+      shell:
+        cmd: "{{ my_s5 }} cat '{{ clone_s3_dst }}metadata/{{ db_name }}/cluster_config.json' | {{ grab_exe }} > {{ tmp_conf }}"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+      register: out
+    - debug: var=out.stdout_lines
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+
+    - name: <<DST>> Push updated cluster_config.json file to clone path
+      shell:
+        cmd: "{{ my_s5 }} cp {{ tmp_conf }} '{{ clone_s3_dst }}metadata/{{ db_name }}/cluster_config.json'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+      register: out
+    - debug: var=out.stdout_lines
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+
+    - name: <<DST>> Get local Data and Depot directory paths to clean up prior to revive_db
+      shell:
+        cmd: grep -E "_data|_depot" {{ tmp_conf }} | cut -d\" -f4 | xargs dirname | uniq
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+      register: localdirs
+    - debug: var=localdirs.stdout_lines
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+
+    - name: <<DST>> Delete local Data and Depot directories across destination nodes prior to revive_db
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ localdirs.stdout_lines }}"
+      register: out
+    - debug: var=out
+
+    - name: <<DST>> Revive the clone database on the destination cluster
+      shell:
+        cmd: >-
+          /opt/vertica/bin/admintools -t revive_db
+          --database={{ db_name }}
+          --hosts={{ dst_nodes }}
+          --communal-storage-params={{ auth_path }}
+          --communal-storage-location={{ clone_s3_dst }}
+          --force
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+      register: out
+    - debug: var=out.stdout_lines
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+
+    - name: <<DST>> Start the cloned database as a test
+      shell:
+        cmd: >-
+          /opt/vertica/bin/admintools -t start_db
+          --database={{ db_name }}
+          --force
+          --noprompts
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+      register: out
+    - debug: var=out.stdout_lines
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+
+    - name: <<DST>> Display large Projections from cloned database
+      shell:
+        cmd: "vsql -c \"{{ vs_usage }}\" | sed '/^$/d'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+      register: out
+    - debug: var=out.stdout_lines
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+
+    - name: <<DST>> Display count of rows
+      shell:
+        cmd: "vsql -c \"{{ count_star }}\" | sed '/^$/d'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+      register: out
+    - debug: var=out.stdout_lines
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+
+    - name: <<DST>> Stop the cloned database
+      shell:
+        cmd: >-
+          /opt/vertica/bin/admintools -t stop_db
+          --database={{ db_name }}
+          --force --noprompts
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+      register: out
+    - debug: var=out.stdout_lines
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+
+    - name: <<DST>> Drop the cloned database
+      shell:
+        cmd: >-
+          /opt/vertica/bin/admintools -t drop_db
+          --database={{ db_name }}
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+      register: out
+    - debug: var=out.stdout_lines
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+
+    - name: <<DST>> Delete the cloned Communal storage for {{ db_name }} database at the destination path
+      shell:
+        cmd: "{{ my_s5 }} --log=error rm '{{ clone_s3_dst }}*'"
+      become: yes
+      become_user: "{{ run_as }}"
+      become_method: su
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+      register: out
+    - debug: var=out.stdout_lines
+      run_once: yes
+      delegate_to: "{{ dst_host }}"
+
+...

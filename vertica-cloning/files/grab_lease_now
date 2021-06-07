@@ -1,0 +1,21 @@
+#!/bin/awk -f
+
+{
+    switch ($0) {
+    case /   "ClusterLeaseExpiration" /:
+	     print strftime("   \"ClusterLeaseExpiration\" : \"%F %T.000000\",", systime(), 1)
+	     break
+    default:
+	     print $0
+    }
+}
+
+###
+# This script acts as a filter for the cluster_config.json file, replacing the lease
+# expiration with the current time. Use it like:
+#    [dbadmin@node01]$ s5cmd --endpoint-url=10.1.2.3 \
+#      cat s3://vertica/test23/dw01/metadata/verticadb/cluster_config.json \
+#       | grab_lease_now > /tmp/cfg_new
+#    [dbadmin@node01]$ s5cmd --endpoint-url=10.1.2.3 \
+#      cp /tmp/cfg_new s3://vertica/test23/dw01/metadata/verticadb/cluster_config.json
+###

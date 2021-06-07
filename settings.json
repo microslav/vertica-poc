@@ -1,0 +1,8 @@
+{
+    "id": "vertica",
+    "name": "Vertica on Pure Storage",
+    "filter": "database",
+    "image": "http://code.purestorage.com/images/1_Vertica.png",
+    "featured": 0,
+    "priority": 3
+}
